@@ -1,0 +1,28 @@
+# secrets
+.env
+*.env
+!*.env.example
+probe/.env
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# node (only if the TS payments sidecar path is taken)
+node_modules/
+dist/
+
+# tooling
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# local claude code state
+.claude/settings.local.json

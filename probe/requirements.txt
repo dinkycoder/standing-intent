@@ -1,0 +1,15 @@
+# Week-1 probe dependencies only. NOT the project's dependency set.
+# Pin exact versions once you have confirmed what actually works, and record the
+# source of the x402 package in probe/findings.md.
+
+requests
+python-dotenv
+eth-account
+
+# The x402 Python SDK. VERIFY THE SOURCE BEFORE INSTALLING.
+# Canonical: https://github.com/x402-foundation/x402  ->  python/x402
+# The name is polluted on PyPI (TRON forks, Solana ports, unrelated products).
+# Install with the extras you need, e.g.:
+#   python -m pip install "x402[requests,evm]"
+# Leaving it commented out deliberately so it is an explicit, verified decision.
+# x402[requests,evm]
