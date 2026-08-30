@@ -6,11 +6,19 @@ Commit it even if the verdict is RED, especially if the verdict is RED.
 **Date started:** 2026-08-30
 **Date concluded:** 2026-08-30
 
-Status: **first end-to-end settlement succeeded on Base Sepolia** on 2026-08-30
-(probe_02, tx `0x1b1b78e2fcba693ace023bb8af2ae19277f597d6f82b6a2adcc6bd6765dd309d`).
-The self-hosted x402 Flask seller returned a real 402, the buyer signed an
-authorization, the facilitator settled it on chain, and the paid resource came
-back. Desk research was done against the x402-foundation reference clone
+Status (2026-08-30): **verdict GREEN, pending one mainnet settlement.**
+- **Settlement proven** — probe_02, tx
+  `0x1b1b78e2fcba693ace023bb8af2ae19277f597d6f82b6a2adcc6bd6765dd309d`: a
+  self-hosted Flask seller returned a real 402, the buyer signed, the facilitator
+  settled on chain (Base Sepolia), and the paid resource came back.
+- **Vendor supply proven** — probe_03: the public x402 Bazaar discovery API
+  (Coinbase CDP / PayAI, no auth) lists 14k–28k live resources, mostly on Base;
+  13 of 16 independent endpoints spot-checked returned a live 402, all Base
+  mainnet USDC.
+- **Open:** one real payment against a live mainnet endpoint (~$1 USDC) to fully
+  close the GREEN "settlement confirmed" clause on mainnet.
+
+Desk research was done against the x402-foundation reference clone
 (`C:\Users\dinky\projects\x402-reference`, repo commit `e398a9e`, 2026-08-28) and
 `docs.x402.org`.
 
@@ -18,50 +26,88 @@ back. Desk research was done against the x402-foundation reference clone
 
 ## 1. Verdict
 
-> **AMBER** — proceed with a hybrid basket.
+> **GREEN** — a real multi-vendor basket is possible on Base. One cheap
+> confirmation step remains (a mainnet settlement); see the caveat below.
 
 **Reasoning:**
-**Settlement works end to end and is confirmed on chain** (section 4: BaseScan
-block 46175913, status Success, USDC transferred buyer → seller, gas paid by the
-facilitator). That permanently rules out **RED**.
+1. **Settlement works and is confirmed on chain** (section 4: BaseScan block
+   46175913, Success, USDC buyer → seller, gas paid by the facilitator). RED is
+   ruled out.
+2. **Real, independently-operated, live, priced x402 endpoints on Base exist in
+   large numbers** (section 2, probe_03). The public x402 Bazaar discovery API
+   (Coinbase CDP, no account or key required) lists **14,324** resources;
+   PayAI's lists **27,855**. In a 600-item sample from CDP, **every** item
+   advertised a Base network and there were **275 distinct operator domains**.
+   Of 16 distinct-domain endpoints hit with unpaid GETs, **13 returned a live
+   HTTP 402** with valid v2 payment terms — all on Base **mainnet**
+   (`eip155:8453`), all priced in USDC, $0.001–$5.00. Real commercial operators
+   among them: Bitrefill (gift cards), Apify (web scraping), OneSource (RPC).
 
-The endpoint count is **1 self-hosted, 0 third-party**. Desk research already
-found no public x402 demo endpoint — every quickstart and Python example targets
-`localhost:4021` — and probe_03 (a real survey of third-party x402 endpoints on
-Base) has **not been run yet**, so GREEN cannot be claimed. This is the AMBER case
-in `docs/WEEK1_GATE.md`: compose the basket from self-hosted `x402[flask]`
-sellers, labelled honestly as a synthetic vendor environment.
+`docs/WEEK1_GATE.md` GREEN = "five or more real, live, independently-operated
+x402 endpoints, priced, on Base, with settlement confirmed." The endpoint bar is
+cleared many times over.
 
-**I agree with AMBER.** probe_03 is still outstanding but it cannot move the
-verdict off AMBER:
-- It cannot push to RED — settlement is already proven on chain.
-- It is unlikely to justify GREEN for the *graded testnet demo* even if it finds
-  5+ real endpoints, because real third-party x402 endpoints run on Base
-  **mainnet**, not Base Sepolia (the `docs/WEEK1_GATE.md` "expected finding").
-  A mainnet real-endpoint basket is a separate, optional demo track.
+**Caveat — the "settlement confirmed" clause is confirmed on _testnet_, not yet
+against a real mainnet endpoint.** The live endpoints are Base mainnet only, so
+closing GREEN fully means one real payment with a few dollars of real USDC via a
+mainnet facilitator (`api.cdp.coinbase.com/platform/v2/x402` or
+`facilitator.payai.network`). This is inside the $10 gate ceiling and is the only
+open item. Until it is done, treat the verdict as **GREEN pending one mainnet
+settlement**.
 
-So the verdict is locked. probe_03 refines *how synthetic* the basket has to be
-and whether a small mainnet demo is worth ~$5 of USDC — not the pass/fail call.
+**Quality caveat (not a verdict change):** the 14k catalog is bimodal — a
+minority are real commercial services; the majority are toy/demo endpoints
+(coin flips, riddles, fortunes). A non-trivial basket is composable from the
+real ones, but the number of serious vendors *per category* is far smaller than
+the raw count suggests. This shapes the demo scenario, not the pass/fail.
 
 ---
 
 ## 2. Endpoint inventory
 
-| # | Endpoint | What it sells | Price | Asset | Network | Live? | Source of URL |
+**Discovery method.** Machine-readable discovery **is** available and needs no
+credentials. The x402 Bazaar discovery API is a plain public GET:
+
+- `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` (Coinbase
+  CDP) → `200`, `pagination.total` = **14324**
+- `https://facilitator.payai.network/discovery/resources` (PayAI) → `200`,
+  `pagination.total` = **27855**
+
+No CDP account, no API key. (The CDP *business-verification* wall the author hit
+is for issuing CDP API keys / running a CDP-hosted facilitator — it does **not**
+gate reading the catalog.) Survey run 2026-08-30: pulled a 600-item sample from
+CDP; **all 600** advertised a Base network; **275 distinct operator domains**.
+Then hit 16 distinct-domain endpoints with unpaid GETs.
+
+| # | Endpoint | What it sells | Price | Asset | Network | Live? (unpaid GET, 2026-08-30) | Source of URL |
 |---|---|---|---|---|---|---|---|
-| 1 | `http://localhost:4021/weather` | mock weather JSON | $0.01 | USDC | `eip155:84532` (Base Sepolia) | **yes — settled** tx `0x1b1b78e2…dd309d` | x402-reference `examples/python/servers/flask/main.py` |
-| 2 | | | | | | | |
-| 3 | | | | | | | |
-| 4 | | | | | | | |
-| 5 | | | | | | | |
+| 1 | `http://localhost:4021/weather` | mock weather JSON (self-hosted) | $0.01 | USDC | `eip155:84532` Base Sepolia | **yes — settled** tx `0x1b1b78e2…dd309d` | x402-reference flask example |
+| 2 | `https://api.bitrefill.com/x402/gift-cards/search` | gift-card / voucher catalogue, 10k+ brands, 180+ countries | $0.002 | USDC | `eip155:8453` Base mainnet (also Arbitrum, Polygon, Solana) | **yes — HTTP 402**, valid v2 terms | CDP Bazaar |
+| 3 | `https://agi.apify.com/protocols/x402/prepaid-tokens` | Apify web-scraping / automation marketplace (prepaid credit) | $1.00 | USDC | `eip155:8453` (also Solana) | **yes — HTTP 402** | CDP Bazaar |
+| 4 | `https://api.onesource.io/api/chain/erc20-balance` | Ethereum RPC-as-API — one of a family (`block-number`, `tx/:hash`, `nonce/:address`, `erc20-transfers`, …) | $0.003 | USDC | `eip155:8453` | **yes — HTTP 402** (`exact` + `batch-settlement`) | CDP Bazaar |
+| 5 | `https://laso.finance/get-card` | prepaid debit card for US use | $5.00 | USDC | `eip155:8453` (also Solana) | **yes — HTTP 402** | CDP Bazaar |
+| 6 | `https://x402.ottoai.services/crypto-news` | real-time crypto news + sentiment | $0.001 | USDC | `eip155:8453` (also Solana) | **yes — HTTP 402** | CDP Bazaar |
+| 7 | `https://kronossignals.com/api/v1/liquidations/btc` | forward liquidation cluster maps | $0.02 | USDC | `eip155:8453` | **yes — HTTP 402** | CDP Bazaar |
+| 8 | `https://crypto.apitoll.cloud/v1/crypto/price` | crypto spot prices by ticker / id / chain:addr | $0.001 | USDC | `eip155:8453` (also Solana) | **yes — HTTP 402** | CDP Bazaar |
 
-Count of real, live, **independently-operated** endpoints on Base: **0**
-(confirmed by doc review — none are published; all examples use localhost).
-Rows 2–5 to be filled by **probe_03**, the third-party endpoint survey — the
-still-open half of the gate.
+Also returned a live 402 in the same probe (toy / demo tier, all `eip155:8453`
+USDC, ~$0.001): `coinflip402.vercel.app`, `riddlex402.vercel.app`,
+`memegeneratorx402.vercel.app`, `x402lifeadvice.vercel.app`,
+`ladyfortunalx402.vercel.app`, `api.loyalspark.online` (loyalty platform).
 
-Network split — Base mainnet only vs. available on Base Sepolia: **n/a yet** —
-the self-hosted seller example is configured for Base Sepolia (`eip155:84532`).
+Not live on an unpaid GET (still real x402 services, just not GET-probeable):
+`stableenrich.dev`, `stableupload.dev` (both `405` — POST-only endpoints);
+`api.exa.ai/search` (`404` — catalog path stale or requires query params).
+
+**Count of real, live, independently-operated, priced endpoints on Base:**
+**13 confirmed live in a 16-endpoint spot check**, drawn from **275 distinct Base
+operator domains in a 600-item sample**, from a catalog of **14,324** (CDP) /
+**27,855** (PayAI). The GREEN bar of 5 is cleared comfortably.
+
+**Network split.** All 13 live endpoints were Base **mainnet** (`eip155:8453`).
+**Zero** live third-party endpoints on Base Sepolia — testnet is for self-hosted
+sellers only. The catalog also contains non-CAIP-2 `network: "base"` strings and
+some `x402Version: 1` entries; a consumer must tolerate both.
 
 ---
 
@@ -197,10 +243,10 @@ codebase and each one gets a test that reads it on chain.
 |---|---|---|---|
 | SDK package | `x402` 2.21.0 (`x402-foundation/x402`, `python/x402`, commit `e398a9e`) | local reference clone | n/a |
 | Testnet facilitator | `https://x402.org/facilitator` — Base Sepolia + Solana devnet **only** | docs.x402.org/getting-started/quickstart-for-sellers | n/a — **doc only** |
-| Mainnet facilitator (option A) | `https://api.cdp.coinbase.com/platform/v2/x402` | docs.x402.org/getting-started/quickstart-for-sellers | n/a — **doc only** |
-| Mainnet facilitator (option B) | `https://facilitator.payai.network` | docs.x402.org/getting-started/quickstart-for-sellers | n/a — **doc only** |
+| Mainnet facilitator (option A) | `https://api.cdp.coinbase.com/platform/v2/x402` | docs.x402.org/getting-started/quickstart-for-sellers | discovery sub-path `GET /discovery/resources` returned `200` (no auth) on 2026-08-30; settle/verify not yet exercised |
+| Mainnet facilitator (option B) | `https://facilitator.payai.network` | docs.x402.org/getting-started/quickstart-for-sellers | discovery sub-path `GET /discovery/resources` returned `200` (no auth) on 2026-08-30; settle/verify not yet exercised |
 | USDC (Base Sepolia) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | Circle official docs: developers.circle.com/stablecoins/usdc-contract-addresses (Testnet section, Base Sepolia) | **YES — read on chain 2026-08-30** via `https://sepolia.base.org` (chain id 84532): `symbol()` = `"USDC"`, `decimals()` = `6`; buyer `balanceOf` returned exactly the fauceted 20000000 |
-| USDC (Base mainnet) | not yet sourced from primary docs | — | no |
+| USDC (Base mainnet) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | observed as the `asset` in the live 402 of ~13 independent Bazaar endpoints (2026-08-30); Circle docs mainnet section not re-fetched — do so before pinning | **YES — read on chain 2026-08-30** via `https://mainnet.base.org` (chain id 8453): `name()` = `"USD Coin"`, `symbol()` = `"USDC"`, `decimals()` = `6` |
 | SpendPermissionManager | not sourced — this is a Base Account / Spend Permissions contract, not an x402 artifact; needs the Coinbase Base Account docs | — | no |
 | Base mainnet chain id | `8453` → CAIP-2 `eip155:8453` | docs.x402.org/getting-started/quickstart-for-sellers + flask README | no — **doc only** |
 | Base Sepolia chain id | `84532` → CAIP-2 `eip155:84532` | docs.x402.org/getting-started/quickstart-for-sellers + flask README | **YES** — RPC `eth_chainId` over `https://sepolia.base.org` returned `84532` on 2026-08-30 |
@@ -218,9 +264,11 @@ facilitator for mainnet — use a CDP or PayAI mainnet facilitator instead.
 | Native ETH balance | **0** (0 wei) — as expected; only USDC was claimed |
 | Tx count (nonce) | 0 — wallet has never transacted |
 
-**Gotcha for the constant-pinning test (CLAUDE.md rule 2):** this Sepolia USDC
-deployment returns `name()` = `"USDC"`, *not* `"USD Coin"` like mainnet USDC. A
-pinning test must assert `symbol()` / `decimals()`, not `name()`.
+**Gotcha for the constant-pinning test (CLAUDE.md rule 2) — now confirmed both
+ways:** Base **Sepolia** USDC returns `name()` = `"USDC"`; Base **mainnet** USDC
+returns `name()` = `"USD Coin"` (both read on chain 2026-08-30). `symbol()` is
+`"USDC"` and `decimals()` is `6` on both. A pinning test must assert
+`symbol()` / `decimals()`, never `name()`.
 
 **Open question — now ANSWERED by probe_02:** the buyer held 0 ETH and had never
 transacted, and the payment still settled. The buyer does **not** need gas. The
@@ -236,11 +284,13 @@ an off-chain authorization. See section 8, finding 1.
 | Real money spent | **$0** — testnet only |
 | Testnet funds used | 0.01 Base Sepolia USDC (of 20 fauceted) + 0 ETH; facilitator paid the ~6.3e-7 ETH gas |
 | Mainnet USDC spent | $0 |
-| Elapsed time | 1 day (2026-08-30; desk research, wallet setup, seller setup, and first settlement all same day) |
+| Elapsed time | 1 day — 2026-08-30. Desk research, both wallets, seller setup, first settlement, and the probe_03 Bazaar survey all same day. |
 
 Ceiling was $10 and five working days. Actual: $0 and 1 day. Well under both.
-Remaining spend before the gate is fully closed: $0 (probe_03 is a survey) unless
-an optional Base **mainnet** real-endpoint demo is chosen (~$5 of USDC).
+Remaining spend to fully close GREEN: **one mainnet settlement** against a real
+Bazaar endpoint. Cheapest live candidates are ~$0.001 (e.g. `x402.ottoai.services`,
+`crypto.apitoll.cloud`), so ~$1 of real USDC covers funding + a handful of
+attempts. Still far inside the $10 ceiling.
 
 ---
 
@@ -249,11 +299,14 @@ an optional Base **mainnet** real-endpoint demo is chosen (~$5 of USDC).
 The most valuable section. What did you find that the thirteen-week plan assumes
 wrongly? Write it down now, while it is still surprising.
 
-- **There is no public demo endpoint.** Both x402 quickstarts and every Python
-  example in the reference repo point at `http://localhost:4021`. The first 402
-  this project ever sees will come from a seller it runs itself. The week-1 gate's
-  "hunt for 5 real endpoints" framing is moot — the honest answer is AMBER by
-  construction, and the endpoint inventory is a self-hosted-seller inventory.
+- **No public *tutorial* endpoint, but a huge public *marketplace*.** Every
+  quickstart and Python example targets `http://localhost:4021`, so the *first*
+  402 had to come from a self-hosted seller (still true, and why probe_02 ran
+  local). But probe_03 then found the opposite of scarcity: the x402 Bazaar
+  discovery API is public and unauthenticated and lists **14k–28k** live
+  resources, the overwhelming majority on Base. The earlier working assumption
+  that this would land at AMBER "by construction" was wrong — see section 1,
+  now GREEN.
 - **The v1/v2 header split is a live trap.** v1 used a single `X-PAYMENT` header
   and a hand-rolled 3-step flow; v2 uses `payment-required` / `payment-signature`
   / `payment-response` and a session wrapper that does it all. Third-party guides
@@ -288,34 +341,93 @@ wrongly? Write it down now, while it is still surprising.
   clone, not PyPI**, because the `x402` name is polluted there (TRON forks,
   Solana-only ports, unrelated commercial packages).
 
+- **Discovery is a solved problem, and it is not gated by the CDP wall.** The
+  x402 Bazaar catalog is a plain public `GET /discovery/resources` on both the
+  CDP facilitator (`api.cdp.coinbase.com/platform/v2/x402`) and PayAI
+  (`facilitator.payai.network`) — `200`, no API key, no account. The author's
+  CDP business-verification block affects issuing CDP keys / running a
+  CDP-hosted facilitator, **not** reading the marketplace. The planned
+  vendor-discovery component is mostly "call this endpoint and filter," which
+  again trims what the build has to invent (cf. the spend-controls finding).
+
+- **The catalog is enormous but bimodal, and dirty.** ~14k (CDP) / ~28k (PayAI)
+  resources, but a spot check shows most are toy endpoints (coin flips, riddles,
+  fortunes, meme generators). Real commercial vendors exist — Bitrefill, Apify,
+  OneSource — just not many *per category*. This matches prior research flagging
+  a large share of x402 transaction volume as gamed / self-dealing rather than
+  organic demand. The feed also mixes CAIP-2 (`eip155:8453`) with bare `"base"`
+  strings and carries live `x402Version: 1` entries. Vendor evaluation needs
+  quality heuristics and must tolerate both wire versions and both network-id
+  formats.
+
+  **Consequence for the product thesis.** "Provable best-price across N vendors"
+  is **not currently demonstrable**, because in most categories N ≈ 1 — there is
+  no competing set to be best within. The one metric (human touchpoints per
+  basket) and the 10x claim that rests on it are **unaffected**: they come from
+  the durable mandate + non-custodial Spend Permission + no-gas-needed
+  properties, not from price comparison. Action: **drop best-price capture from
+  the pitch** until the market has real per-category depth; keep it as a latent
+  capability to switch on later, and reconsider its place in the metrics table
+  in `CLAUDE.md` (currently "track from week 5"). The demo basket must be
+  assembled from the specific real vendors that exist (e.g. a gift card via
+  Bitrefill + a data pull via OneSource + compute via Apify), not from a
+  hypothetical dense marketplace.
+
+- **The two catalogs disagree substantially — discovery is fragmented.** Same
+  day, same query: CDP returned `pagination.total` = **14,324**, PayAI
+  **27,855**. These are different facilitators maintaining different indexes;
+  neither is authoritative or complete. An agent that wants to see the whole
+  market must query **multiple** discovery services and merge/dedupe the
+  results — treating any single facilitator's catalog as "the market" will miss
+  a large fraction of it. Build the discovery layer as a fan-out over a
+  configurable list of facilitators from the start.
+
+- **Real third-party endpoints are Base mainnet, exclusively.** All 13 live
+  endpoints in the probe were `eip155:8453`. Zero third-party endpoints on Base
+  Sepolia. So the two demo tracks are genuinely different environments: the
+  synthetic Base Sepolia basket (self-hosted, free) and a real Base **mainnet**
+  basket (Bazaar vendors, costs real USDC). Not interchangeable — decide per
+  demo which one is being shown.
+
 ---
 
 ## 9. Decision
 
-> **Proceed to week 2**, with a hybrid basket: self-hosted `x402[flask]` sellers
-> on Base Sepolia, labelled in the README and writeup as a synthetic vendor
-> environment. Settlement is proven; RED is ruled out.
+> **Proceed to week 2. Verdict GREEN pending one mainnet settlement.** A real
+> multi-vendor procurement basket on Base is viable — the vendor supply is not
+> the constraint it was assumed to be.
 
-**Settlement half of the gate: CLOSED.** End-to-end payment works and is
-confirmed on chain (section 4). Verdict locked at AMBER (section 1).
+**Both halves of the gate are now answered:**
+- *Does settlement work?* Yes — proven on chain (section 4, Base Sepolia).
+- *Do real endpoints exist?* Yes — 13 live-verified in a 16-endpoint spot check,
+  from 275 distinct Base operator domains in a 600-item sample, from a public
+  14k/28k catalog (section 2).
 
-**Next action — run probe_03: survey real third-party x402 endpoints on Base.**
-This is the half of the gate still unanswered: *how many real, independently
-operated x402 endpoints actually exist, and on which network?* Expected from the
-`docs/WEEK1_GATE.md` prediction: a handful, Base **mainnet** only. The output is
-the filled endpoint table in section 2 and a decision on whether an optional
-mainnet real-endpoint demo (~$5 USDC) is worth doing alongside the synthetic
-Base Sepolia basket. probe_03 cannot change the AMBER verdict; it sizes the
-synthetic-vs-real split.
+**One open item to fully close GREEN:** run one real payment against a live
+Bazaar endpoint on Base **mainnet**, via a mainnet facilitator (CDP or PayAI).
+Pick a ~$0.001 endpoint; fund the buyer wallet with ~$1–2 of real USDC on Base
+mainnet; reuse `probe_02_settle.py` unchanged (it takes a URL and reads the
+network from the 402). Record the tx in a short addendum to section 4. This is
+the only remaining spend and is well inside the $10 ceiling.
 
-**Smaller close-out items (not blocking week 2):**
-1. Paste the verbatim decoded `payment-required` object from the probe run into
-   section 3, replacing the reconstruction.
-2. Archive `probe/` to `docs/archive/probe/` per `probe/README.md` once probe_03
-   is done (findings.md is the part that survives).
+**Then close week 1:**
+1. Paste the verbatim decoded `payment-required` object from the probe_02 run
+   into section 3, replacing the reconstruction.
+2. Archive `probe/` to `docs/archive/probe/` per `probe/README.md` (this file
+   survives).
 
 **Carried into the main build:**
-- Vendor evaluation must treat each 402's `accepts` as a menu and pick.
-- Re-sign authorizations inside the 300s window; never queue a signed payment.
+- Discovery = `GET /discovery/resources`, but **fan out over a configurable list
+  of facilitators** (CDP + PayAI at minimum) and merge/dedupe — the catalogs
+  disagree by ~2x, no single one is the market. Not a component to invent, but
+  more than a one-liner.
+- Vendor evaluation must score quality (the catalog is mostly toys), treat
+  `accepts` as a menu, and tolerate both `x402Version` 1 and 2 and both
+  `eip155:8453` and bare `"base"` network ids.
+- **Best-price / cheapest-vendor is not a demo feature for now** — N ≈ 1 per
+  category. Build the basket from named real vendors.
+- Two separate demo environments: synthetic Base Sepolia (free, self-hosted)
+  and real Base mainnet (Bazaar vendors, real USDC). Choose per demo.
 - The agent gets its own `x402[requests,evm]` install from the local clone.
-- Buyer wallet is funded in USDC only — no ETH, by design.
+- Buyer wallet funded in USDC only, no ETH — the facilitator pays gas.
+- Re-sign authorizations inside the 300s window; never queue a signed payment.
