@@ -20,14 +20,28 @@ back. Desk research was done against the x402-foundation reference clone
 
 > **AMBER** — proceed with a hybrid basket.
 
-**Reasoning (two or three sentences):**
-There is **no public x402 demo endpoint** — every quickstart and every Python
-example in the reference repo points at `http://localhost:4021` — so fewer than
-five real independently-operated endpoints exist (zero, in fact). But **settlement
-works**: a signed authorization against a self-hosted Flask seller settled on Base
-Sepolia end to end. That is exactly the AMBER case in `docs/WEEK1_GATE.md`: compose
-the basket from self-hosted `x402[flask]` endpoints, honestly labelled as a
-synthetic vendor environment. RED (settlement cannot be made to work) is ruled out.
+**Reasoning:**
+**Settlement works end to end and is confirmed on chain** (section 4: BaseScan
+block 46175913, status Success, USDC transferred buyer → seller, gas paid by the
+facilitator). That permanently rules out **RED**.
+
+The endpoint count is **1 self-hosted, 0 third-party**. Desk research already
+found no public x402 demo endpoint — every quickstart and Python example targets
+`localhost:4021` — and probe_03 (a real survey of third-party x402 endpoints on
+Base) has **not been run yet**, so GREEN cannot be claimed. This is the AMBER case
+in `docs/WEEK1_GATE.md`: compose the basket from self-hosted `x402[flask]`
+sellers, labelled honestly as a synthetic vendor environment.
+
+**I agree with AMBER.** probe_03 is still outstanding but it cannot move the
+verdict off AMBER:
+- It cannot push to RED — settlement is already proven on chain.
+- It is unlikely to justify GREEN for the *graded testnet demo* even if it finds
+  5+ real endpoints, because real third-party x402 endpoints run on Base
+  **mainnet**, not Base Sepolia (the `docs/WEEK1_GATE.md` "expected finding").
+  A mainnet real-endpoint basket is a separate, optional demo track.
+
+So the verdict is locked. probe_03 refines *how synthetic* the basket has to be
+and whether a small mainnet demo is worth ~$5 of USDC — not the pass/fail call.
 
 ---
 
@@ -42,7 +56,9 @@ synthetic vendor environment. RED (settlement cannot be made to work) is ruled o
 | 5 | | | | | | | |
 
 Count of real, live, **independently-operated** endpoints on Base: **0**
-(confirmed by doc review — none are published; all examples use localhost)
+(confirmed by doc review — none are published; all examples use localhost).
+Rows 2–5 to be filled by **probe_03**, the third-party endpoint survey — the
+still-open half of the gate.
 
 Network split — Base mainnet only vs. available on Base Sepolia: **n/a yet** —
 the self-hosted seller example is configured for Base Sepolia (`eip155:84532`).
@@ -124,11 +140,19 @@ Observations on the wire format:
 | Facilitator response | `{"success": true, ...}` |
 | Resource returned after payment | `{"report":{"temperature":70,"weather":"sunny"}}` |
 | Block explorer link | https://sepolia.basescan.org/tx/0x1b1b78e2fcba693ace023bb8af2ae19277f597d6f82b6a2adcc6bd6765dd309d |
-| Verified independently on explorer? | **NOT YET DONE** — checking basescan next |
+| Verified independently on explorer? | **YES** — BaseScan, 2026-08-30 |
+| Block | 46175913 (Base Sepolia) |
+| Status | Success |
+| From (tx sender) | `0xd407e409E34E0b9afb99EcCeb609bDbcD5e7f1bf` — the facilitator's relayer; **neither buyer nor seller wallet** |
+| Interacted with | USDC contract `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+| ERC-20 transfer in the tx | `0xA85F…2CB0` → `0xa31C…4F6D`, 0.01 USDC |
+| ETH value moved | 0 |
+| Gas fee | 0.000000629813860576 ETH — **paid by the facilitator**, not by either of our wallets |
 
-A 200 response is not proof of settlement. The facilitator's `{"success": true}`
-plus the returned resource is strong evidence; independent confirmation on
-BaseScan is still pending.
+A 200 response is not proof of settlement — this is. BaseScan shows the USDC
+`Transfer` (buyer → seller, 0.01) inside a transaction **sent and paid for by the
+facilitator relayer** `0xd407…f1bf`. The buyer wallet is not the sender and paid
+no gas. This is the on-chain proof behind the no-gas-needed finding in section 8.
 
 ---
 
@@ -209,11 +233,14 @@ an off-chain authorization. See section 8, finding 1.
 
 | Item | Amount |
 |---|---|
-| Testnet funds used | 0.01 testnet USDC (of 20 fauceted) + 0 ETH — no real value |
+| Real money spent | **$0** — testnet only |
+| Testnet funds used | 0.01 Base Sepolia USDC (of 20 fauceted) + 0 ETH; facilitator paid the ~6.3e-7 ETH gas |
 | Mainnet USDC spent | $0 |
-| Days elapsed | 1 |
+| Elapsed time | 1 day (2026-08-30; desk research, wallet setup, seller setup, and first settlement all same day) |
 
-Ceiling was $10 and five working days. Over it? No — well under both.
+Ceiling was $10 and five working days. Actual: $0 and 1 day. Well under both.
+Remaining spend before the gate is fully closed: $0 (probe_03 is a survey) unless
+an optional Base **mainnet** real-endpoint demo is chosen (~$5 of USDC).
 
 ---
 
@@ -269,15 +296,23 @@ wrongly? Write it down now, while it is still surprising.
 > on Base Sepolia, labelled in the README and writeup as a synthetic vendor
 > environment. Settlement is proven; RED is ruled out.
 
-**Remaining week-1 close-out:**
-1. Confirm tx `0x1b1b78e2…dd309d` on https://sepolia.basescan.org — check the
-   USDC `Transfer` log is buyer → seller for `10000`, and note who paid gas
-   (expected: the facilitator's relayer, not the buyer). Update section 4's
-   "verified independently" row.
-2. Paste the verbatim decoded `payment-required` object from the probe run into
+**Settlement half of the gate: CLOSED.** End-to-end payment works and is
+confirmed on chain (section 4). Verdict locked at AMBER (section 1).
+
+**Next action — run probe_03: survey real third-party x402 endpoints on Base.**
+This is the half of the gate still unanswered: *how many real, independently
+operated x402 endpoints actually exist, and on which network?* Expected from the
+`docs/WEEK1_GATE.md` prediction: a handful, Base **mainnet** only. The output is
+the filled endpoint table in section 2 and a decision on whether an optional
+mainnet real-endpoint demo (~$5 USDC) is worth doing alongside the synthetic
+Base Sepolia basket. probe_03 cannot change the AMBER verdict; it sizes the
+synthetic-vs-real split.
+
+**Smaller close-out items (not blocking week 2):**
+1. Paste the verbatim decoded `payment-required` object from the probe run into
    section 3, replacing the reconstruction.
-3. Archive `probe/` to `docs/archive/probe/` per `probe/README.md` (findings.md
-   is the part that survives), or leave until end of week 1.
+2. Archive `probe/` to `docs/archive/probe/` per `probe/README.md` once probe_03
+   is done (findings.md is the part that survives).
 
 **Carried into the main build:**
 - Vendor evaluation must treat each 402's `accepts` as a menu and pick.
