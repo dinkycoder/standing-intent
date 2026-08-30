@@ -4,26 +4,30 @@ Fill this in as you go. This file is the only thing in `probe/` that survives we
 Commit it even if the verdict is RED, especially if the verdict is RED.
 
 **Date started:** 2026-08-30
-**Date concluded:**
+**Date concluded:** 2026-08-30
 
-Status: desk research done against the x402-foundation reference clone
+Status: **first end-to-end settlement succeeded on Base Sepolia** on 2026-08-30
+(probe_02, tx `0x1b1b78e2fcba693ace023bb8af2ae19277f597d6f82b6a2adcc6bd6765dd309d`).
+The self-hosted x402 Flask seller returned a real 402, the buyer signed an
+authorization, the facilitator settled it on chain, and the paid resource came
+back. Desk research was done against the x402-foundation reference clone
 (`C:\Users\dinky\projects\x402-reference`, repo commit `e398a9e`, 2026-08-28) and
-`docs.x402.org`. **Nothing has been run on chain yet.** Every value below is marked
-**doc only** until a probe run or an on-chain read confirms it.
+`docs.x402.org`.
 
 ---
 
 ## 1. Verdict
 
-> GREEN / AMBER / RED — **PENDING.** probe_02 has not been run.
+> **AMBER** — proceed with a hybrid basket.
 
 **Reasoning (two or three sentences):**
-Desk research already settles the endpoint question: there is **no public x402 demo
-endpoint**. Every quickstart and every Python example in the reference repo points at
-`http://localhost:4021`. So the basket will be composed of self-hosted x402 sellers
-(Flask + `x402` middleware) on Base Sepolia — this is the AMBER path from
-`docs/WEEK1_GATE.md`, and it was always the likely outcome. The verdict stays PENDING
-until one settlement lands on chain (probe_02) and rules out RED.
+There is **no public x402 demo endpoint** — every quickstart and every Python
+example in the reference repo points at `http://localhost:4021` — so fewer than
+five real independently-operated endpoints exist (zero, in fact). But **settlement
+works**: a signed authorization against a self-hosted Flask seller settled on Base
+Sepolia end to end. That is exactly the AMBER case in `docs/WEEK1_GATE.md`: compose
+the basket from self-hosted `x402[flask]` endpoints, honestly labelled as a
+synthetic vendor environment. RED (settlement cannot be made to work) is ruled out.
 
 ---
 
@@ -31,7 +35,7 @@ until one settlement lands on chain (probe_02) and rules out RED.
 
 | # | Endpoint | What it sells | Price | Asset | Network | Live? | Source of URL |
 |---|---|---|---|---|---|---|---|
-| 1 | `http://localhost:4021/weather` | mock weather JSON | $0.01 | USDC | `eip155:84532` (Base Sepolia) | self-hosted, not yet run | x402-reference `examples/python/servers/flask/main.py` |
+| 1 | `http://localhost:4021/weather` | mock weather JSON | $0.01 | USDC | `eip155:84532` (Base Sepolia) | **yes — settled** tx `0x1b1b78e2…dd309d` | x402-reference `examples/python/servers/flask/main.py` |
 | 2 | | | | | | | |
 | 3 | | | | | | | |
 | 4 | | | | | | | |
@@ -47,16 +51,14 @@ the self-hosted seller example is configured for Base Sepolia (`eip155:84532`).
 
 ## 3. Raw 402 response
 
-Paste the actual payment-requirements object from `probe_01` / probe_02's first
-unpaid request. Do not summarise it.
+The 402 status body is literally `{}`. The real payment terms travel in the
+base64-encoded `payment-required` **header**; decoded, they are:
 
-```json
-(not yet captured — run the probe against a local seller)
-```
-
-**DOC ONLY — expected shape**, from the x402-reference Flask example README
-(`examples/python/servers/flask/README.md`). The 402 body is `{}`; the real object
-is the base64-decoded `payment-required` header:
+> ⚠️ **RECONSTRUCTED** from the seller's route config
+> (`examples/python/servers/flask/main.py`, `GET /weather`) plus the confirmed
+> settlement values below. Field names/order and the SVM option's exact shape are
+> not guaranteed byte-for-byte. **Replace this with the verbatim decoded object
+> that `probe_02_settle.py` printed to the terminal.**
 
 ```json
 {
@@ -69,18 +71,41 @@ is the base64-decoded `payment-required` header:
       "network": "eip155:84532",
       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
       "amount": "10000",
-      "payTo": "0x...",
+      "payTo": "0xa31C8f81A66C779A312b4aFA85aD38c8436B4F6D",
       "maxTimeoutSeconds": 300,
       "extra": { "name": "USDC", "version": "2" }
+    },
+    {
+      "scheme": "exact",
+      "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+      "amount": "10000",
+      "payTo": "11111111111111111111111111111111",
+      "maxTimeoutSeconds": 300
     }
   ]
 }
 ```
 
-Observations on the wire format (doc only, to confirm on a real run):
+Observations on the wire format:
 
-- `amount` is in atomic units — `10000` = $0.01 USDC (USDC has 6 decimals).
-- `network` is CAIP-2 (`eip155:84532`), not a friendly name like `base-sepolia`.
+- **The 402 body is empty (`{}`).** Anything that reads the JSON body for payment
+  terms will find nothing — the terms are in the `payment-required` header,
+  base64-encoded. The `x402_requests` session wrapper reads the header; a naive
+  client that only inspects the body will silently fail.
+- **`accepts` is a LIST, not a single object.** The seller advertises a menu of
+  payment options (here: pay on Base Sepolia in USDC, *or* pay on Solana devnet)
+  and the **buyer chooses** which one to satisfy. The probe's EVM registration
+  picks the `eip155:84532` entry. Vendor evaluation in the main build has to treat
+  every 402 as "one or more offers," not "the price."
+- **`amount` is atomic units.** `"10000"` = $0.01 because USDC has 6 decimals
+  (10000 / 10^6 = 0.01). It is a decimal string, not a number. Never divide by
+  10^18 out of Ethereum habit — USDC is 10^6.
+- **`maxTimeoutSeconds` is 300.** The signed authorization is only valid for five
+  minutes. An agent that signs, then queues, then submits late will have its
+  payment rejected as expired. Any planner that batches or delays payment steps
+  needs to re-sign inside that window.
+- **`network` is CAIP-2** (`eip155:84532`), not a friendly name like
+  `base-sepolia`.
 - v2 header names: `payment-required` (on the 402), `payment-signature` (on the
   retry), `payment-response` (on the settled 200). No `X-PAYMENT` — that is v1.
 
@@ -90,13 +115,20 @@ Observations on the wire format (doc only, to confirm on a real run):
 
 | Field | Value |
 |---|---|
-| Transaction hash | (not yet — probe_02 not run) |
-| Network | |
-| Facilitator used | |
-| Block explorer link | |
-| Verified independently on explorer? | no |
+| Transaction hash | `0x1b1b78e2fcba693ace023bb8af2ae19277f597d6f82b6a2adcc6bd6765dd309d` |
+| Network | `eip155:84532` (Base Sepolia) |
+| Payer (buyer) | `0xA85F4a77714431c4583f8adD0BC6Bd90f6Ce2CB0` |
+| Pay-to (seller) | `0xa31C8f81A66C779A312b4aFA85aD38c8436B4F6D` |
+| Amount | `10000` atomic = **$0.01 USDC** (6 decimals) |
+| Facilitator used | `https://x402.org/facilitator` (the seller's config, not the buyer's) |
+| Facilitator response | `{"success": true, ...}` |
+| Resource returned after payment | `{"report":{"temperature":70,"weather":"sunny"}}` |
+| Block explorer link | https://sepolia.basescan.org/tx/0x1b1b78e2fcba693ace023bb8af2ae19277f597d6f82b6a2adcc6bd6765dd309d |
+| Verified independently on explorer? | **NOT YET DONE** — checking basescan next |
 
-A 200 response is not proof of settlement. Confirm the transaction on chain.
+A 200 response is not proof of settlement. The facilitator's `{"success": true}`
+plus the returned resource is strong evidence; independent confirmation on
+BaseScan is still pending.
 
 ---
 
@@ -166,10 +198,10 @@ facilitator for mainnet — use a CDP or PayAI mainnet facilitator instead.
 deployment returns `name()` = `"USDC"`, *not* `"USD Coin"` like mainnet USDC. A
 pinning test must assert `symbol()` / `decimals()`, not `name()`.
 
-**Open question now on the record:** the buyer holds 0 ETH. Whether an x402
-`exact` payment on Base Sepolia needs the buyer to hold gas depends on whether
-the facilitator submits (and pays gas for) the transfer. To be answered by
-probe_02.
+**Open question — now ANSWERED by probe_02:** the buyer held 0 ETH and had never
+transacted, and the payment still settled. The buyer does **not** need gas. The
+facilitator submits the on-chain transfer and pays its gas; the buyer only signs
+an off-chain authorization. See section 8, finding 1.
 
 ---
 
@@ -177,11 +209,11 @@ probe_02.
 
 | Item | Amount |
 |---|---|
-| Testnet funds used | $0 so far |
+| Testnet funds used | 0.01 testnet USDC (of 20 fauceted) + 0 ETH — no real value |
 | Mainnet USDC spent | $0 |
-| Days elapsed | 1 (desk research only) |
+| Days elapsed | 1 |
 
-Ceiling was $10 and five working days. Over it? No.
+Ceiling was $10 and five working days. Over it? No — well under both.
 
 ---
 
@@ -209,21 +241,46 @@ wrongly? Write it down now, while it is still surprising.
   needs revisiting — the project's value has to come from the *mandate* /
   multi-vendor / escalation logic, not from re-implementing per-payment caps.
 
+- **THE BUYER NEEDS NO GAS.** The buyer wallet held 0 ETH and had 0 prior
+  transactions, and the payment still settled (section 4). The facilitator
+  submits and pays for the on-chain transfer; the buyer only signs an off-chain
+  authorization. This matters more than it looks: an agent that never holds gas
+  needs **one** funded asset instead of two, and an entire failure category —
+  *agent stalls mid-basket because it ran out of gas* — simply does not exist.
+  Card-rail competitors have no equivalent property. Feed this into the 10x
+  argument alongside the Spend Permission point.
+
+- **Spend-control comparison is "at most," not "less than."** A $0.01 price
+  cleared a $0.01 `max_amount_per_payment` cap exactly — the boundary is
+  inclusive. Worth an explicit boundary test later (price == cap passes, price
+  == cap + 1 atomic unit fails).
+
+- **The SDK must be installed into the agent's own environment.** Installing
+  `x402` for the seller (the Flask example's `.venv`) does nothing for the buyer.
+  The agent needs its own install, and it must come **from the local reference
+  clone, not PyPI**, because the `x402` name is polluted there (TRON forks,
+  Solana-only ports, unrelated commercial packages).
+
 ---
 
 ## 9. Decision
 
-> **Proceed with hybrid basket** (self-hosted x402 sellers on Base Sepolia),
-> pending one on-chain settlement from probe_02 to rule out RED.
+> **Proceed to week 2**, with a hybrid basket: self-hosted `x402[flask]` sellers
+> on Base Sepolia, labelled in the README and writeup as a synthetic vendor
+> environment. Settlement is proven; RED is ruled out.
 
-**Next action:**
-1. Create a throwaway EVM wallet; fund it with Base Sepolia ETH (gas) and Base
-   Sepolia USDC from a faucet.
-2. Run the x402-reference Flask seller locally on `:4021` with that wallet's
-   address as `EVM_ADDRESS`.
-3. `python probe\probe_01_observe_402.py http://localhost:4021/weather` — paste the
-   real decoded 402 into section 3.
-4. `python probe\probe_02_settle.py http://localhost:4021/weather` — record the
-   settlement tx hash + network in section 4 and verify it on the Base Sepolia
-   explorer.
-5. Set the verdict in section 1.
+**Remaining week-1 close-out:**
+1. Confirm tx `0x1b1b78e2…dd309d` on https://sepolia.basescan.org — check the
+   USDC `Transfer` log is buyer → seller for `10000`, and note who paid gas
+   (expected: the facilitator's relayer, not the buyer). Update section 4's
+   "verified independently" row.
+2. Paste the verbatim decoded `payment-required` object from the probe run into
+   section 3, replacing the reconstruction.
+3. Archive `probe/` to `docs/archive/probe/` per `probe/README.md` (findings.md
+   is the part that survives), or leave until end of week 1.
+
+**Carried into the main build:**
+- Vendor evaluation must treat each 402's `accepts` as a menu and pick.
+- Re-sign authorizations inside the 300s window; never queue a signed payment.
+- The agent gets its own `x402[requests,evm]` install from the local clone.
+- Buyer wallet is funded in USDC only — no ETH, by design.
