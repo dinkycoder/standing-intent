@@ -1,0 +1,5 @@
+Week-1 gate local SELLER wallet address.
+Use this as EVM_ADDRESS when configuring the local x402 Flask seller.
+The private key was printed to the terminal at generation time and is NOT stored here.
+
+SELLER_ADDRESS=0xa31C8f81A66C779A312b4aFA85aD38c8436B4F6D
