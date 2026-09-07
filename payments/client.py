@@ -1,8 +1,11 @@
-"""x402 pay flow. inspect_offer/parse_terms here; pay() is added in the next task."""
+"""x402 pay flow: inspect_offer/parse_terms discover and price an offer; pay()
+drives the x402 SDK session (402 -> sign -> retry) then verifies settlement
+on-chain before returning. paid=True only after verify_settlement matches."""
 
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -10,7 +13,12 @@ from decimal import Decimal, InvalidOperation
 import requests
 
 from payments.constants import USDC_BY_CHAIN
-from payments.errors import EndpointUnreachable, UnexpectedStatus
+from payments.errors import (
+    EndpointUnreachable, InsufficientBalance, NetworkNotAllowed, NoSatisfiableOffer,
+    OfferOverCap, SettlementMismatch, SettlementRejected, UnexpectedStatus,
+)
+from payments.settlement import ExpectedSettlement, VerifiedSettlement, verify_settlement
+from payments.wallet import Wallet
 
 _KNOWN_BASE = {"base": 8453, "base-sepolia": 84532}
 
@@ -111,7 +119,18 @@ def inspect_offer(url: str, *, timeout: float = 20) -> PaymentQuote:
 
     header = resp.headers.get("payment-required")
     if header:
-        return parse_terms(_decode_header(header), url)
+        try:
+            decoded = _decode_header(header)
+        except (ValueError, binascii.Error):
+            # Malformed base64 / non-JSON header (json.JSONDecodeError and
+            # binascii.Error are both ValueError subclasses; name both for intent).
+            decoded = None
+        if isinstance(decoded, dict):
+            return parse_terms(decoded, url)
+        # Header decoded but is not an object (array / string / null / bad b64):
+        # not payment terms. Degrade as if absent -> JSON-body accepts fallback,
+        # then UnexpectedStatus. inspect_offer only ever raises EndpointUnreachable
+        # or UnexpectedStatus, or returns a PaymentQuote.
     try:
         body = resp.json()
     except ValueError:
@@ -123,3 +142,78 @@ def inspect_offer(url: str, *, timeout: float = 20) -> PaymentQuote:
         # 402 but no parseable terms anywhere
         return PaymentQuote(url=url, x402_version=1, offers=(), best_satisfiable=None, raw_terms={})
     raise UnexpectedStatus(resp.status_code, url)
+
+
+@dataclass(frozen=True)
+class PaymentOutcome:
+    url: str
+    paid: bool
+    offer: Offer
+    tx_hash: str
+    network: int
+    amount_paid: Decimal
+    pay_to: str
+    resource: object
+    verified: VerifiedSettlement
+    quote: PaymentQuote
+
+
+def pay(url: str, wallet: Wallet, *, max_amount: Decimal,
+        network_allowlist: tuple[int, ...] = (84532, 8453),
+        timeout: float = 30) -> PaymentOutcome:
+    quote = inspect_offer(url, timeout=timeout)
+    offer = quote.best_satisfiable
+    if offer is None:
+        raise NoSatisfiableOffer(f"{url}: no satisfiable accepts entry")
+    if offer.amount > max_amount:
+        raise OfferOverCap(offer.amount, max_amount)
+    if offer.chain_id not in network_allowlist:
+        raise NetworkNotAllowed(f"{offer.network} not in {network_allowlist}")
+    if wallet.usdc_balance(offer.chain_id) < offer.amount:
+        raise InsufficientBalance(f"balance < {offer.amount} USDC on chain {offer.chain_id}")
+
+    from x402 import x402ClientSync
+    from x402.http import x402HTTPClientSync
+    from x402.http.clients import x402_requests
+    from x402.mechanisms.evm.exact.register import register_exact_evm_client
+
+    x_client = x402ClientSync().set_spend_controls({"max_amount_per_payment": f"${max_amount}"})
+    register_exact_evm_client(x_client, wallet.x402_signer())
+    http_client = x402HTTPClientSync(x_client)
+
+    with x402_requests(x_client) as session:
+        resp = session.get(url, timeout=timeout)
+
+    if resp.status_code != 200:
+        raise UnexpectedStatus(resp.status_code, url)
+
+    try:
+        settle = http_client.get_payment_settle_response(lambda name: resp.headers.get(name))
+    except ValueError as exc:
+        raise SettlementRejected(f"no PAYMENT-RESPONSE from {url}") from exc
+
+    if not getattr(settle, "success", False):
+        raise SettlementRejected(f"facilitator reported success != true for {url}")
+    tx_hash = getattr(settle, "transaction", None)
+    if not tx_hash:
+        raise SettlementRejected(f"PAYMENT-RESPONSE for {url} carried no transaction hash")
+
+    verified = verify_settlement(
+        tx_hash,
+        ExpectedSettlement(payer=wallet.address, pay_to=offer.pay_to,
+                           asset=offer.asset, amount=offer.amount),
+        network=offer.chain_id,
+    )
+    if not verified.matches_expected:
+        raise SettlementMismatch(verified.mismatch or "unknown")
+
+    try:
+        resource = resp.json()
+    except ValueError:
+        resource = resp.content
+
+    return PaymentOutcome(
+        url=url, paid=True, offer=offer, tx_hash=tx_hash, network=offer.chain_id,
+        amount_paid=verified.amount_usdc, pay_to=verified.transfer_to,
+        resource=resource, verified=verified, quote=quote,
+    )

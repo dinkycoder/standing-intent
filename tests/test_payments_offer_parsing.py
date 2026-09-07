@@ -1,8 +1,14 @@
+import base64
 import json
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
-from payments.client import Offer, PaymentQuote, parse_terms
+import pytest
+import requests
+
+from payments.client import Offer, PaymentQuote, inspect_offer, parse_terms
+from payments.errors import EndpointUnreachable, UnexpectedStatus
 
 DATA = Path("tests/data")
 
@@ -94,3 +100,105 @@ def test_malformed_amount_does_not_poison_other_offers():
     assert "amount" in q.offers[0].unsatisfiable_reason
     assert q.best_satisfiable is q.offers[1]
     assert q.best_satisfiable.amount == Decimal("0.002")
+
+
+# --- inspect_offer: HTTP wrapper around parse_terms (offline, mocked network) ---
+
+_URL = "https://x402.ottoai.services/crypto-news"
+
+
+class _FakeResponse:
+    def __init__(self, *, status_code=402, headers=None, json_body=None,
+                 json_raises=False, content=b""):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._json_body = json_body
+        self._json_raises = json_raises
+        self.content = content
+
+    def json(self):
+        if self._json_raises:
+            raise ValueError("no JSON body")
+        return self._json_body
+
+
+def test_inspect_offer_header_path_matches_parse_terms():
+    terms = _terms("offer_ottoai.json")
+    header = base64.b64encode(json.dumps(terms).encode()).decode()
+    resp = _FakeResponse(status_code=402, headers={"payment-required": header},
+                         json_raises=True)
+    with patch("payments.client.requests.get", return_value=resp):
+        q = inspect_offer(_URL)
+    expected = parse_terms(terms, _URL)
+    assert q == expected
+    assert q.x402_version == expected.x402_version == 2
+    assert q.best_satisfiable == expected.best_satisfiable
+    assert q.best_satisfiable is not None
+
+
+def test_inspect_offer_body_fallback_matches_parse_terms():
+    terms = _terms("offer_ottoai.json")
+    resp = _FakeResponse(status_code=402, headers={}, json_body=terms)
+    with patch("payments.client.requests.get", return_value=resp):
+        q = inspect_offer(_URL)
+    expected = parse_terms(terms, _URL)
+    assert q == expected
+    assert q.x402_version == expected.x402_version == 2
+    assert q.best_satisfiable == expected.best_satisfiable
+
+
+def test_inspect_offer_connection_failure_raises_endpoint_unreachable():
+    with patch("payments.client.requests.get",
+               side_effect=requests.RequestException("connection refused")):
+        with pytest.raises(EndpointUnreachable):
+            inspect_offer(_URL)
+
+
+def test_inspect_offer_unexpected_status_raises():
+    resp = _FakeResponse(status_code=404, headers={}, json_raises=True)
+    with patch("payments.client.requests.get", return_value=resp):
+        with pytest.raises(UnexpectedStatus):
+            inspect_offer(_URL)
+
+
+def test_inspect_offer_malformed_header_degrades_to_body():
+    terms = _terms("offer_ottoai.json")
+    resp = _FakeResponse(status_code=402,
+                         headers={"payment-required": "!!!not-base64!!!"},
+                         json_body=terms)
+    with patch("payments.client.requests.get", return_value=resp):
+        q = inspect_offer(_URL)
+    assert q == parse_terms(terms, _URL)
+    assert q.best_satisfiable is not None
+
+
+def test_inspect_offer_non_object_json_header_degrades_to_body():
+    # Valid base64 of valid JSON that is not an object (an array): decodes fine
+    # but is not payment terms -> must fall through to the body, not raise.
+    terms = _terms("offer_ottoai.json")
+    header = base64.b64encode(json.dumps([1, 2, 3]).encode()).decode()
+    resp = _FakeResponse(status_code=402, headers={"payment-required": header},
+                         json_body=terms)
+    with patch("payments.client.requests.get", return_value=resp):
+        q = inspect_offer(_URL)
+    assert q == parse_terms(terms, _URL)
+    assert q.best_satisfiable is not None
+
+
+def test_inspect_offer_non_object_json_header_no_usable_body():
+    # Non-object header AND no usable body: the header must not blow up parse_terms.
+    # Non-402 status -> UnexpectedStatus (still inside the PaymentError taxonomy).
+    header = base64.b64encode(json.dumps([1, 2, 3]).encode()).decode()
+    resp404 = _FakeResponse(status_code=404, headers={"payment-required": header},
+                            json_body=[1, 2, 3])
+    with patch("payments.client.requests.get", return_value=resp404):
+        with pytest.raises(UnexpectedStatus):
+            inspect_offer(_URL)
+
+    # 402 with nothing parseable -> the pre-existing Task-4 branch returns an
+    # empty PaymentQuote (still "returns a PaymentQuote", never a raw exception).
+    resp402 = _FakeResponse(status_code=402, headers={"payment-required": header},
+                            json_raises=True)
+    with patch("payments.client.requests.get", return_value=resp402):
+        q = inspect_offer(_URL)
+    assert isinstance(q, PaymentQuote) and q.best_satisfiable is None
