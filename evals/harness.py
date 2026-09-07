@@ -73,11 +73,11 @@ def run_eval(
     target = cheapest_in_policy_vendor(task)
     captures = sum(
         1
-        for r in results
+        for r, o in zip(results, outcomes)
         if target is not None
+        and o is not GradeOutcome.BUDGET_VIOLATION
         and len(r.purchases) == 1
         and r.purchases[0].vendor_id == target.vendor_id
-        and r.purchases[0].price_usdc == target.price_usdc
     )
 
     completed = [r for r, o in zip(results, outcomes) if o is GradeOutcome.PASS]

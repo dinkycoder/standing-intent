@@ -86,6 +86,16 @@ def test_run_eval_all_pass(sample_task):
     assert report.outcomes == ["pass"] * 8
 
 
+def test_best_price_capture_counts_target_vendor_bought_above_catalog(sample_task):
+    # sample_task target = v1 (catalog 0.01, cap 0.05). Buy v1 at 0.03:
+    # PASS (v1 == expected, 0.03 <= max_price 0.05), not a budget violation ->
+    # still "captured" the cheapest in-policy vendor.
+    r = AgentResult(purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.03"))], touchpoints=1)
+    report = run_eval(sample_task, _fixed_agent(r), n_trials=8)
+    assert report.best_price_capture_rate == 1.0
+    assert report.pass_1 == 1.0
+
+
 def test_run_eval_overspend_reports_budget_violations_and_zero_pass(sample_task):
     bad = AgentResult(purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.09"))], touchpoints=1)
     report = run_eval(sample_task, _fixed_agent(bad), n_trials=8)
