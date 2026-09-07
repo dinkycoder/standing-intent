@@ -42,3 +42,24 @@ def sample_task(sample_task_file):
     from evals.models import TaskSpec
 
     return TaskSpec.from_json_file(sample_task_file)
+
+
+@pytest.fixture
+def make_result():
+    from decimal import Decimal
+
+    from evals.models import AgentResult, Escalation, Purchase
+
+    def _make(purchases=None, touchpoints=1, escalations=None, cost_usdc="0", trace=None):
+        return AgentResult(
+            purchases=[
+                Purchase(vendor_id=vid, price_usdc=Decimal(str(price)))
+                for vid, price in (purchases or [])
+            ],
+            touchpoints=touchpoints,
+            escalations=[Escalation(reason=r) for r in (escalations or [])],
+            cost_usdc=Decimal(str(cost_usdc)),
+            trace=trace or [],
+        )
+
+    return _make
