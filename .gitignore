@@ -2,7 +2,7 @@
 .env
 *.env
 !*.env.example
-probe/.env
+docs/archive/probe/.env
 
 # python
 __pycache__/
