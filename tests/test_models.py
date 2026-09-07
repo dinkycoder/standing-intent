@@ -33,6 +33,31 @@ def test_missing_required_field_raises(sample_task_dict):
         TaskSpec.model_validate(sample_task_dict)
 
 
+def test_malformed_amount_string_raises_validation_error(sample_task_dict):
+    # A bad amount string must surface as a field-scoped ValidationError, not a
+    # bare decimal.InvalidOperation leaking out of the validator.
+    sample_task_dict["mandate"]["budget_cap_usdc"] = "1.0.0"
+    with pytest.raises(ValidationError):
+        TaskSpec.model_validate(sample_task_dict)
+
+    sample_task_dict["mandate"]["budget_cap_usdc"] = "$5"
+    with pytest.raises(ValidationError):
+        TaskSpec.model_validate(sample_task_dict)
+
+
+def test_negative_money_is_rejected(sample_task_dict):
+    sample_task_dict["environment"]["vendors"][0]["price_usdc"] = "-1"
+    with pytest.raises(ValidationError):
+        TaskSpec.model_validate(sample_task_dict)
+
+
+def test_float_assignment_after_construction_is_rejected(sample_task_file):
+    # validate_assignment=True: the silent-precision path the money rule forbids.
+    task = TaskSpec.from_json_file(sample_task_file)
+    with pytest.raises(ValidationError):
+        task.mandate.budget_cap_usdc = 0.05  # float
+
+
 def test_string_and_int_money_are_accepted(sample_task_dict):
     sample_task_dict["environment"]["vendors"][0]["price_usdc"] = 1  # int -> Decimal("1")
     task = TaskSpec.model_validate(sample_task_dict)

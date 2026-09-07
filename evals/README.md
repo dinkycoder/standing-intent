@@ -39,3 +39,13 @@ python -m pytest -v
 
 `tests/test_grading.py` and `tests/test_harness.py` are the gate: they prove the
 harness does not lie to itself.
+
+## Known limitations
+
+- **Grading trusts the agent's self-reported purchases.** `grade()` reads
+  `AgentResult.purchases` (vendor id + price paid) and never reconciles it against
+  `task.environment.vendors` — it does not check the vendor exists in the catalog
+  or that the reported price matches the catalog price. An agent that under-reports
+  a price could grade `PASS` plus best-price capture. Moot for the Week-2 stub
+  (it buys nothing); real reconciliation is deferred to the Week-3 payments spine,
+  where settlement is on-chain and independently verifiable.

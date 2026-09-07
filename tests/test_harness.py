@@ -45,11 +45,14 @@ def test_pass_k_rejects_k_greater_than_n():
 
 # ---- policy helpers ----------------------------------------------------
 
-def test_in_policy_vendors_uses_mandate_allowlist_over_vendor_flag(sample_task):
-    sample_task.mandate.vendor_allowlist = ["v2"]
-    sample_task.environment.vendors[0].in_allowlist = True  # v1 flagged in, but not on allowlist
+def test_in_policy_vendors_mandate_allowlist_overrides_vendor_flag(sample_task):
+    # Mandate allowlist admits both vendors; v1's per-vendor flag says out.
+    # The mandate allowlist wins, so v1 must still be in policy. An impl that
+    # AND-ed the two conditions would drop v1 and return only ["v2"].
+    sample_task.mandate.vendor_allowlist = ["v1", "v2"]
+    sample_task.environment.vendors[0].in_allowlist = False
     ids = [v.vendor_id for v in in_policy_vendors(sample_task)]
-    assert ids == ["v2"]
+    assert ids == ["v1", "v2"]
 
 
 def test_cheapest_in_policy_vendor_ignores_wrong_category_and_over_budget(sample_task):
@@ -124,6 +127,46 @@ def test_run_eval_counts_escalations(sample_task):
     assert report.escalation_rate == 1.0
     assert report.escalation_reasons == {"needs_human": 8}
     assert report.touchpoints_per_basket == 2.0
+
+
+def test_run_eval_discriminates_cost_and_escalation_aggregation(sample_task):
+    # Flaky agent: even seeds PASS with cost 0.02 and two escalations {a, b};
+    # odd seeds FAIL (wrong vendor) with cost 0.10 and NO escalations.
+    # n_trials=8, base_seed=0 -> 4 PASS (even), 4 FAIL (odd).
+    @agent("cost-flaky")
+    def run_task(task, rng_seed):
+        if rng_seed % 2 == 0:
+            return AgentResult(
+                purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.01"))],
+                touchpoints=1,
+                cost_usdc=Decimal("0.02"),
+                escalations=[Escalation(reason="a"), Escalation(reason="b")],
+            )
+        return AgentResult(
+            purchases=[Purchase(vendor_id="v2", price_usdc=Decimal("0.02"))],
+            touchpoints=1,
+            cost_usdc=Decimal("0.10"),
+            escalations=[],
+        )
+
+    report = run_eval(sample_task, run_task, n_trials=8, base_seed=0)
+    assert report.pass_1 == 0.5
+    # Average over the 4 COMPLETED trials only. Dividing by n_trials -> 0.06;
+    # summing over all results -> 0.48. Neither would equal 0.02.
+    assert report.cost_per_completed_tx_usdc == Decimal("0.02")
+    # Fraction of trials with >=1 escalation: 4/8. "total escalations / n_trials"
+    # would be (4*2 + 4*0)/8 == 1.0.
+    assert report.escalation_rate == 0.5
+    # Only the 4 even trials escalate, each contributing {a, b} once.
+    assert report.escalation_reasons == {"a": 4, "b": 4}
+
+
+def test_run_eval_rejects_zero_trials(sample_task):
+    good = AgentResult(
+        purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.01"))], touchpoints=1
+    )
+    with pytest.raises(ValueError):
+        run_eval(sample_task, _fixed_agent(good), n_trials=0)
 
 
 def test_run_eval_flaky_agent_pass_k_collapses(sample_task):

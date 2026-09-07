@@ -54,6 +54,9 @@ def run_eval(
     n_trials: int = 8,
     base_seed: int = 0,
 ) -> EvalReport:
+    if n_trials < 1:
+        raise ValueError(f"n_trials must be >= 1, got {n_trials}")
+
     agent_id = require_agent_id(agent_fn)
 
     results: list[AgentResult] = []

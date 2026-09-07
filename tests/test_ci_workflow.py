@@ -20,6 +20,13 @@ def test_gating_job_runs_pytest():
     assert any("pytest" in str(step.get("run", "")) for step in steps)
 
 
+def test_gating_job_actually_gates():
+    # continue-on-error: true on harness-tests would silently disarm the whole
+    # gate while the suite stayed green.
+    job = _load()["jobs"]["harness-tests"]
+    assert job.get("continue-on-error") in (None, False)
+
+
 def test_report_job_is_non_gating():
     job = _load()["jobs"]["stub-eval-report"]
     assert job.get("continue-on-error") is True

@@ -8,7 +8,7 @@ float invites precision bugs (probe/findings.md sections 3 and 6).
 from __future__ import annotations
 
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -27,15 +27,21 @@ def _strict_decimal(value: object) -> Decimal:
     if isinstance(value, Decimal):
         return value
     if isinstance(value, (str, int)):
-        return Decimal(str(value))
+        try:
+            return Decimal(str(value))
+        except InvalidOperation:
+            raise ValueError(f"not a valid USDC amount: {value!r}")
     raise ValueError(f"unsupported type for USDC amount: {type(value)!r}")
 
 
-UsdcAmount = Annotated[Decimal, BeforeValidator(_strict_decimal)]
+# ge=0: a negative amount is never valid money. A negative price would let total
+# spend dip under the cap and dodge BUDGET_VIOLATION, and a negative catalog
+# price would become the cheapest_in_policy_vendor.
+UsdcAmount = Annotated[Decimal, BeforeValidator(_strict_decimal), Field(ge=0)]
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
 class Vendor(_Model):
@@ -49,7 +55,8 @@ class Mandate(_Model):
     goal_category: str
     budget_cap_usdc: UsdcAmount
     vendor_allowlist: Optional[list[str]] = None
-    quality_threshold: Optional[UsdcAmount] = None
+    # A quality score, not a USDC amount — no float-precision rule, just non-negative.
+    quality_threshold: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class ExpectedPurchase(_Model):
