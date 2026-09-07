@@ -1,0 +1,67 @@
+{
+  "accepts": [
+    {
+      "amount": "1000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "extra": { "name": "USD Coin", "version": "2" },
+      "maxTimeoutSeconds": 300,
+      "network": "eip155:8453",
+      "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808",
+      "scheme": "exact"
+    },
+    {
+      "amount": "1000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "extra": { "assetTransferMethod": "permit2", "name": "USD Coin", "version": "2" },
+      "maxTimeoutSeconds": 300,
+      "network": "eip155:8453",
+      "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808",
+      "scheme": "exact"
+    },
+    {
+      "amount": "1000",
+      "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "extra": { "feePayer": "GVJJ7rdGiXr5xaYbRwRbjfaJL7fmwRygFi1H6aGqDveb" },
+      "maxTimeoutSeconds": 300,
+      "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "payTo": "6XcSfqJHr9vNW2vbiRaMqUYVm7shDgLepca54wUTDPN5",
+      "scheme": "exact"
+    }
+  ],
+  "error": "Payment required",
+  "extensions": {
+    "bazaar": {
+      "info": {
+        "input": { "method": "GET", "queryParams": {}, "type": "http" },
+        "output": { "type": "json", "example": { "status": "success", "data": { "report": "Latest crypto news...", "headlines": [ { "rank": 1, "title": "Bitcoin ETFs notch best month of 2026 as BTC gains 25% in August", "whyItMatters": "ETF flows are the strongest near-term driver of institutional participation.", "url": "https://cointelegraph.com/markets/bitcoin-etf-best-month-2026-btc-up-25-august", "publishedAt": "2026-09-02T07:59:43.000Z", "source": "Cointelegraph", "match": "exact" } ] }, "meta": { "generatedAt": "2026-08-10T12:00:00.000Z", "stalenessSec": 1739, "degraded": false, "sourceHealth": { "crypto-news-cache": "ok" }, "dataAsOf": "2026-08-10T08:00:00.000Z", "freshness": "fresh" } } }
+      },
+      "schema": "<elided JSON Schema>"
+    },
+    "builder-code": { "info": { "a": "bc_hc2dhq09" }, "schema": "<elided JSON Schema>" },
+    "offer-receipt": {
+      "info": {
+        "offers": [
+          { "format": "eip712", "acceptIndex": 0, "payload": { "version": 1, "resourceUrl": "https://x402.ottoai.services/crypto-news", "scheme": "exact", "network": "eip155:8453", "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808", "amount": "1000", "validUntil": 1788784425 }, "signature": "0xe652adb611a55dbeb5a9a012a912b12361df3aa7ddabecf5bf27496f68d2b27522d32153bcc00477196d096c135ea72264b3d8ba2494d3ae2add042580a4fef41c" },
+          { "format": "eip712", "acceptIndex": 1, "payload": { "version": 1, "resourceUrl": "https://x402.ottoai.services/crypto-news", "scheme": "exact", "network": "eip155:8453", "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808", "amount": "1000", "validUntil": 1788784425 }, "signature": "0xe652adb611a55dbeb5a9a012a912b12361df3aa7ddabecf5bf27496f68d2b27522d32153bcc00477196d096c135ea72264b3d8ba2494d3ae2add042580a4fef41c" },
+          { "format": "eip712", "acceptIndex": 2, "payload": { "version": 1, "resourceUrl": "https://x402.ottoai.services/crypto-news", "scheme": "exact", "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "payTo": "6XcSfqJHr9vNW2vbiRaMqUYVm7shDgLepca54wUTDPN5", "amount": "1000", "validUntil": 1788784425 }, "signature": "0x271501f67832bf65120c2f0a22dcfc30f0813557811910c662f32177c1b1fd886b257c05138885c1f62a37540eaee1b23c101f10f5895b4d3ac45f88dfa45c0c1b" }
+        ]
+      },
+      "schema": "<elided JSON Schema>"
+    },
+    "otto-content-receipt": {},
+    "sign-in-with-x": {
+      "info": { "domain": "x402.ottoai.services", "uri": "https://x402.ottoai.services/crypto-news", "version": "1", "nonce": "6b6afb34eb592b0a0acbcb5cc9fe043f", "issuedAt": "2026-09-07T12:28:45.823Z", "statement": "Sign in to access Otto AI market intelligence", "resources": ["https://x402.ottoai.services/crypto-news"] },
+      "schema": "<elided JSON Schema>",
+      "supportedChains": [ { "chainId": "eip155:8453", "type": "eip191" }, { "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "type": "ed25519" } ]
+    }
+  },
+  "resource": {
+    "url": "https://x402.ottoai.services/crypto-news",
+    "description": "Importance-ranked crypto headlines with per-article source links and publish times, plus a sentiment-scored market brief. Regenerated hourly; meta carries the snapshot's age and a fresh/stale verdict.",
+    "iconUrl": "https://x402.ottoai.services/assets/otto-icon.png",
+    "mimeType": "application/json",
+    "serviceName": "Otto AI",
+    "tags": ["crypto news", "market news", "sentiment analysis", "breaking headlines"]
+  },
+  "x402Version": 2
+}
