@@ -1,0 +1,46 @@
+name: evals
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  harness-tests:
+    # GATING. The deterministic harness + grading unit tests. A failure here
+    # fails the build. This is the whole point of the gate: it proves the
+    # harness does not lie to itself.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - run: python -m pytest -v
+
+  stub-eval-report:
+    # REPORTING ONLY - does NOT gate the build.
+    #
+    # The stub agent is expected to score pass^1 = 0%. That is correct, not a
+    # failure. Do NOT add a pass-rate threshold, --min-pass flag, or an assert
+    # on report.pass_* to this job. The real gate activates when a non-stub
+    # agent is registered (Week 5+), at which point a threshold is added
+    # deliberately and recorded in the PR that adds it. See CLAUDE.md and
+    # docs/superpowers/specs/2026-09-02-eval-harness-design.md.
+    needs: harness-tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - run: python scripts/run_stub_evals.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stub-eval-results
+          path: evals/results/
