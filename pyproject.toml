@@ -6,3 +6,8 @@ markers = [
     "integration: needs testnet funds or a live seller; not run in CI",
     "manual: run once by hand; records a result",
 ]
+filterwarnings = [
+    # web3 7.16.0 imports websockets.legacy transitively; surfaced here because
+    # this is the first module to `import web3`. Not our code path.
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+]

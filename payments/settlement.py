@@ -47,10 +47,10 @@ def _connect(url: str) -> Web3:
 
 
 def _receipt_and_tx(chain_id: int, tx_hash: str):
-    """Fetch (w3, receipt, tx) for a tx, trying each RPC in turn.
+    """Fetch (receipt, tx) for a tx, trying each RPC in turn.
 
-    Returns (None, None, None) when an RPC answered but the tx is genuinely
-    absent after the retry budget (propagation lag allowance).
+    Returns (None, None) when an RPC answered but the tx is genuinely absent
+    after the retry budget (propagation lag allowance).
 
     Raises ConnectionError when no RPC could serve the query at all -- a
     transport / HTTP error on every endpoint. Per the controller ruling this is
@@ -66,6 +66,7 @@ def _receipt_and_tx(chain_id: int, tx_hash: str):
         for _ in range(_RETRIES):
             try:
                 receipt = w3.eth.get_transaction_receipt(tx_hash)
+                tx = w3.eth.get_transaction(tx_hash)
             except TransactionNotFound:
                 reachable = True           # endpoint works; tx just not here yet
                 time.sleep(_RETRY_SLEEP)
@@ -73,9 +74,9 @@ def _receipt_and_tx(chain_id: int, tx_hash: str):
             except Exception as exc:       # transport / HTTP error -> next endpoint
                 last = exc
                 break
-            return w3, receipt, w3.eth.get_transaction(tx_hash)
+            return receipt, tx
     if reachable:
-        return None, None, None
+        return None, None
     raise ConnectionError(f"no RPC reachable for chain {chain_id}: {last!r}")
 
 
@@ -91,7 +92,7 @@ def _hexstr(value) -> str:
 
 
 def verify_settlement(tx_hash: str, expected: ExpectedSettlement, network: int) -> VerifiedSettlement:
-    _w3, receipt, tx = _receipt_and_tx(network, tx_hash)
+    receipt, tx = _receipt_and_tx(network, tx_hash)
     if receipt is None:
         raise SettlementNotConfirmed(tx_hash, "receipt not found after retries")
 

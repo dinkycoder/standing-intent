@@ -83,8 +83,15 @@ def test_wrong_expected_payto_does_not_match():
     assert "pay_to" in v.mismatch or "to" in v.mismatch
 
 
-def test_missing_tx_raises_not_confirmed():
+def test_missing_tx_raises_not_confirmed(monkeypatch):
     from payments.errors import SettlementNotConfirmed
+
+    # Real "reachable RPC, tx genuinely absent -> SettlementNotConfirmed" test,
+    # but fast: one endpoint, no retry back-off. Without this it walks all 3
+    # mainnet RPCs with 5x2s sleeps each (~30s).
+    monkeypatch.setattr("payments.settlement._RETRY_SLEEP", 0)
+    monkeypatch.setattr("payments.settlement.rpc_urls",
+                        lambda _cid: ("https://mainnet.base.org",))
     try:
         with pytest.raises(SettlementNotConfirmed):
             verify_settlement(
