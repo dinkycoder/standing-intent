@@ -1,4 +1,8 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra"
+addopts = "-ra -m 'not integration and not manual'"
+markers = [
+    "integration: needs testnet funds or a live seller; not run in CI",
+    "manual: run once by hand; records a result",
+]

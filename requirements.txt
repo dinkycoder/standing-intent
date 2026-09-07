@@ -1,1 +1,4 @@
 pydantic==2.13.5
+web3==7.16.0
+eth-account==0.14.0
+x402[requests,evm,flask] @ git+https://github.com/x402-foundation/x402@e398a9e#subdirectory=python/x402
