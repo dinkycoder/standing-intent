@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import requests
 
@@ -53,12 +53,20 @@ def _offer_from_entry(entry: dict) -> Offer:
     network = str(entry.get("network", ""))
     chain_id = _chain_id_of(network)
     asset = str(entry.get("asset", ""))
-    amount = Decimal(str(entry.get("amount", "0"))) / Decimal(10) ** 6
+    raw_amount = entry.get("amount", "0")
+    try:
+        amount = Decimal(str(raw_amount)) / Decimal(10) ** 6
+        amount_ok = True
+    except (InvalidOperation, TypeError):
+        amount = Decimal(0)
+        amount_ok = False
     extra = entry.get("extra") or {}
     transfer_method = extra.get("assetTransferMethod") or "transferWithAuthorization"
 
     reason = None
-    if entry.get("scheme") != "exact":
+    if not amount_ok:
+        reason = f"unparseable amount: {raw_amount!r}"
+    elif entry.get("scheme") != "exact":
         reason = f"scheme {entry.get('scheme')!r} not supported"
     elif chain_id not in USDC_BY_CHAIN:
         reason = f"network {network!r} is not a supported Base chain"

@@ -2,11 +2,23 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
-
 from payments.client import Offer, PaymentQuote, parse_terms
 
 DATA = Path("tests/data")
+
+_USDC_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+
+
+def _good_entry(amount="1000"):
+    return {
+        "scheme": "exact",
+        "network": "eip155:84532",
+        "asset": _USDC_SEPOLIA,
+        "amount": amount,
+        "payTo": "0x000000000000000000000000000000000000dEaD",
+        "maxTimeoutSeconds": 300,
+        "extra": {"name": "USDC", "version": "2"},
+    }
 
 
 def _terms(name):
@@ -55,3 +67,30 @@ def test_raw_terms_kept_verbatim():
     raw = _terms("offer_ottoai.json")
     q = parse_terms(raw, "u")
     assert q.raw_terms == raw
+
+
+def test_malformed_amount_degrades_offer_not_call():
+    raw = {"x402Version": 2, "accepts": [{**_good_entry(), "amount": "$5"}]}
+    q = parse_terms(raw, "u")
+    assert isinstance(q, PaymentQuote)
+    assert len(q.offers) == 1
+    bad = q.offers[0]
+    assert bad.satisfiable is False
+    assert bad.amount == Decimal(0)
+    assert "amount" in bad.unsatisfiable_reason
+    assert q.best_satisfiable is None
+
+
+def test_malformed_amount_does_not_poison_other_offers():
+    raw = {
+        "x402Version": 2,
+        "accepts": [
+            {**_good_entry(), "amount": "free"},
+            _good_entry(amount="2000"),
+        ],
+    }
+    q = parse_terms(raw, "u")
+    assert q.offers[0].satisfiable is False
+    assert "amount" in q.offers[0].unsatisfiable_reason
+    assert q.best_satisfiable is q.offers[1]
+    assert q.best_satisfiable.amount == Decimal("0.002")
