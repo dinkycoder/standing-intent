@@ -1,0 +1,21 @@
+{
+  "task_id": "cheapest_of_three",
+  "description": "Three in-policy weather-data vendors, all under the $0.05 cap. Pick the cheapest.",
+  "mandate": {
+    "goal_category": "weather-data",
+    "budget_cap_usdc": "0.05",
+    "vendor_allowlist": null,
+    "quality_threshold": null
+  },
+  "environment": {
+    "vendors": [
+      {"vendor_id": "wx_alpha", "category": "weather-data", "price_usdc": "0.03", "in_allowlist": true},
+      {"vendor_id": "wx_bravo", "category": "weather-data", "price_usdc": "0.01", "in_allowlist": true},
+      {"vendor_id": "wx_charlie", "category": "weather-data", "price_usdc": "0.02", "in_allowlist": true}
+    ]
+  },
+  "grading": {
+    "expected_purchase": {"vendor_id": "wx_bravo", "max_price_usdc": "0.05"},
+    "budget_adherence_required": true
+  }
+}

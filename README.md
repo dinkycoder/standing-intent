@@ -7,7 +7,7 @@ The user signs **one** capped, revocable authorization. The agent then discovers
 evaluates offers, and completes purchases with **zero further human contact** until the budget
 is exhausted or an out-of-policy condition forces escalation.
 
-**Status: Week 1 of 13 — endpoint-availability gate. No build work has started.**
+**Current phase: Week 2 — environment + eval harness.** The Week 1 gate closed GREEN (`docs/archive/probe/findings.md`). The eval harness lives in `evals/`; `docs/superpowers/specs/2026-09-02-eval-harness-design.md` is the design and `docs/superpowers/plans/2026-09-07-week2-eval-harness.md` the build plan.
 
 ---
 

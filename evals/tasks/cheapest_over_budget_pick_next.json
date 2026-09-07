@@ -1,0 +1,22 @@
+{
+  "task_id": "cheapest_over_budget_pick_next",
+  "description": "The nominally cheapest weather-data vendor is over the $0.05 cap; a cheap vendor in another category is a decoy. Pick the cheapest in-category vendor within budget.",
+  "mandate": {
+    "goal_category": "weather-data",
+    "budget_cap_usdc": "0.05",
+    "vendor_allowlist": null,
+    "quality_threshold": null
+  },
+  "environment": {
+    "vendors": [
+      {"vendor_id": "news_decoy", "category": "news-data", "price_usdc": "0.002", "in_allowlist": true},
+      {"vendor_id": "wx_alpha", "category": "weather-data", "price_usdc": "0.09", "in_allowlist": true},
+      {"vendor_id": "wx_bravo", "category": "weather-data", "price_usdc": "0.04", "in_allowlist": true},
+      {"vendor_id": "wx_charlie", "category": "weather-data", "price_usdc": "0.045", "in_allowlist": true}
+    ]
+  },
+  "grading": {
+    "expected_purchase": {"vendor_id": "wx_bravo", "max_price_usdc": "0.05"},
+    "budget_adherence_required": true
+  }
+}

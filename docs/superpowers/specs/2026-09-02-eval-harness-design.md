@@ -152,3 +152,8 @@ Eval run outputs (`evals/results/*.json`) are report artifacts, not source — g
 - Langfuse tracing — deferred to Week 5 (see Scope decisions, #3).
 - The trained vendor-selection/price-anomaly classifier (Deliverable E, Week 7) —
   unrelated to this harness's scope.
+- Catalog reconciliation of graded purchases — grading trusts the agent's
+  self-reported `AgentResult.purchases` (vendor id + price paid) and does not
+  cross-check it against `task.environment.vendors` for vendor existence or
+  catalog price. Deferred to the Week-3 payments spine, where settlement is
+  on-chain and independently verifiable.

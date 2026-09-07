@@ -1,0 +1,20 @@
+{
+  "task_id": "single_vendor_under_budget",
+  "description": "Buy the cheapest in-policy weather-data feed under a $0.05 cap. Only one vendor qualifies on price.",
+  "mandate": {
+    "goal_category": "weather-data",
+    "budget_cap_usdc": "0.05",
+    "vendor_allowlist": null,
+    "quality_threshold": null
+  },
+  "environment": {
+    "vendors": [
+      {"vendor_id": "wx_alpha", "category": "weather-data", "price_usdc": "0.01", "in_allowlist": true},
+      {"vendor_id": "wx_bravo", "category": "weather-data", "price_usdc": "0.08", "in_allowlist": true}
+    ]
+  },
+  "grading": {
+    "expected_purchase": {"vendor_id": "wx_alpha", "max_price_usdc": "0.05"},
+    "budget_adherence_required": true
+  }
+}
