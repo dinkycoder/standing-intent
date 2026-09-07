@@ -4,19 +4,23 @@ Fill this in as you go. This file is the only thing in `probe/` that survives we
 Commit it even if the verdict is RED, especially if the verdict is RED.
 
 **Date started:** 2026-08-30
-**Date concluded:** 2026-08-30
+**Date concluded:** 2026-09-07
 
-Status (2026-08-30): **verdict GREEN, pending one mainnet settlement.**
-- **Settlement proven** — probe_02, tx
+Status (2026-09-07): **verdict GREEN — all clauses closed.**
+- **Settlement proven on testnet** — probe_02, tx
   `0x1b1b78e2fcba693ace023bb8af2ae19277f597d6f82b6a2adcc6bd6765dd309d`: a
   self-hosted Flask seller returned a real 402, the buyer signed, the facilitator
   settled on chain (Base Sepolia), and the paid resource came back.
+- **Settlement proven on mainnet** — probe_02 against a real third-party Bazaar
+  endpoint (`x402.ottoai.services/crypto-news`), tx
+  `0x44cb0f1e7bd5794e1d57ff10974fa1e544a43bd90796922e14d6a7e1cd43fcc3`: live 402,
+  buyer signed, facilitator settled on Base **mainnet** (block 50997392), $0.001
+  USDC buyer → seller, paid content returned. On-chain verified. See section 4.
 - **Vendor supply proven** — probe_03: the public x402 Bazaar discovery API
   (Coinbase CDP / PayAI, no auth) lists 14k–28k live resources, mostly on Base;
   13 of 16 independent endpoints spot-checked returned a live 402, all Base
-  mainnet USDC.
-- **Open:** one real payment against a live mainnet endpoint (~$1 USDC) to fully
-  close the GREEN "settlement confirmed" clause on mainnet.
+  mainnet USDC. Re-checked 2026-09-07: ottoai, apitoll, Bitrefill all still live.
+- **Open:** nothing. Both halves of the gate are answered on both networks.
 
 Desk research was done against the x402-foundation reference clone
 (`C:\Users\dinky\projects\x402-reference`, repo commit `e398a9e`, 2026-08-28) and
@@ -26,13 +30,14 @@ Desk research was done against the x402-foundation reference clone
 
 ## 1. Verdict
 
-> **GREEN** — a real multi-vendor basket is possible on Base. One cheap
-> confirmation step remains (a mainnet settlement); see the caveat below.
+> **GREEN** — a real multi-vendor basket is possible on Base. Settlement is
+> confirmed on chain on both Base Sepolia and Base mainnet. No open items.
 
 **Reasoning:**
-1. **Settlement works and is confirmed on chain** (section 4: BaseScan block
-   46175913, Success, USDC buyer → seller, gas paid by the facilitator). RED is
-   ruled out.
+1. **Settlement works and is confirmed on chain, on both networks** (section 4):
+   Base Sepolia block 46175913 (self-hosted seller) and Base **mainnet** block
+   50997392 (real third-party endpoint `x402.ottoai.services`) — both Success,
+   USDC buyer → seller, gas paid by the facilitator relayer. RED is ruled out.
 2. **Real, independently-operated, live, priced x402 endpoints on Base exist in
    large numbers** (section 2, probe_03). The public x402 Bazaar discovery API
    (Coinbase CDP, no account or key required) lists **14,324** resources;
@@ -47,13 +52,12 @@ Desk research was done against the x402-foundation reference clone
 x402 endpoints, priced, on Base, with settlement confirmed." The endpoint bar is
 cleared many times over.
 
-**Caveat — the "settlement confirmed" clause is confirmed on _testnet_, not yet
-against a real mainnet endpoint.** The live endpoints are Base mainnet only, so
-closing GREEN fully means one real payment with a few dollars of real USDC via a
-mainnet facilitator (`api.cdp.coinbase.com/platform/v2/x402` or
-`facilitator.payai.network`). This is inside the $10 gate ceiling and is the only
-open item. Until it is done, treat the verdict as **GREEN pending one mainnet
-settlement**.
+**Caveat resolved (2026-09-07).** The "settlement confirmed" clause was originally
+closed only on testnet. It is now closed on Base **mainnet** too: one real payment
+of $0.001 USDC against `x402.ottoai.services/crypto-news`, settled by that
+endpoint's own facilitator (relayer `0xe748…0fae`), on-chain verified in section
+4. Total real spend: $0.001 (plus ~$2 of USDC funded into the throwaway buyer
+wallet, of which 1.999 remains). Well inside the $10 gate ceiling.
 
 **Quality caveat (not a verdict change):** the 14k catalog is bimodal — a
 minority are real commercial services; the majority are toy/demo endpoints
@@ -113,67 +117,128 @@ some `x402Version: 1` entries; a consumer must tolerate both.
 
 ## 3. Raw 402 response
 
-The 402 status body is literally `{}`. The real payment terms travel in the
-base64-encoded `payment-required` **header**; decoded, they are:
-
-> ⚠️ **RECONSTRUCTED** from the seller's route config
-> (`examples/python/servers/flask/main.py`, `GET /weather`) plus the confirmed
-> settlement values below. Field names/order and the SVM option's exact shape are
-> not guaranteed byte-for-byte. **Replace this with the verbatim decoded object
-> that `probe_02_settle.py` printed to the terminal.**
+The 402 status body carries a JSON copy of the terms; the authoritative copy is
+the base64-encoded `payment-required` **header**. Below is the verbatim decoded
+header from the **mainnet** probe_02 run against `x402.ottoai.services/crypto-news`
+(2026-09-07, `keys sorted` exactly as `probe_02_settle.py` printed it). The large
+`extensions` block is vendor-specific metadata (pre-signed offers, sign-in-with-x,
+builder codes, Bazaar I/O schema) — its payment-bearing values are kept verbatim;
+the embedded JSON-Schema `schema` sub-objects are marked `<elided>`.
 
 ```json
 {
-  "x402Version": 2,
-  "error": "Payment required",
-  "resource": { "url": "http://localhost:4021/weather" },
   "accepts": [
     {
-      "scheme": "exact",
-      "network": "eip155:84532",
-      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "amount": "10000",
-      "payTo": "0xa31C8f81A66C779A312b4aFA85aD38c8436B4F6D",
+      "amount": "1000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "extra": { "name": "USD Coin", "version": "2" },
       "maxTimeoutSeconds": 300,
-      "extra": { "name": "USDC", "version": "2" }
+      "network": "eip155:8453",
+      "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808",
+      "scheme": "exact"
     },
     {
-      "scheme": "exact",
-      "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-      "amount": "10000",
-      "payTo": "11111111111111111111111111111111",
-      "maxTimeoutSeconds": 300
+      "amount": "1000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "extra": { "assetTransferMethod": "permit2", "name": "USD Coin", "version": "2" },
+      "maxTimeoutSeconds": 300,
+      "network": "eip155:8453",
+      "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808",
+      "scheme": "exact"
+    },
+    {
+      "amount": "1000",
+      "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "extra": { "feePayer": "GVJJ7rdGiXr5xaYbRwRbjfaJL7fmwRygFi1H6aGqDveb" },
+      "maxTimeoutSeconds": 300,
+      "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "payTo": "6XcSfqJHr9vNW2vbiRaMqUYVm7shDgLepca54wUTDPN5",
+      "scheme": "exact"
     }
-  ]
+  ],
+  "error": "Payment required",
+  "extensions": {
+    "bazaar": {
+      "info": {
+        "input": { "method": "GET", "queryParams": {}, "type": "http" },
+        "output": { "type": "json", "example": { "status": "success", "data": { "report": "Latest crypto news...", "headlines": [ { "rank": 1, "title": "Bitcoin ETFs notch best month of 2026 as BTC gains 25% in August", "whyItMatters": "ETF flows are the strongest near-term driver of institutional participation.", "url": "https://cointelegraph.com/markets/bitcoin-etf-best-month-2026-btc-up-25-august", "publishedAt": "2026-09-02T07:59:43.000Z", "source": "Cointelegraph", "match": "exact" } ] }, "meta": { "generatedAt": "2026-08-10T12:00:00.000Z", "stalenessSec": 1739, "degraded": false, "sourceHealth": { "crypto-news-cache": "ok" }, "dataAsOf": "2026-08-10T08:00:00.000Z", "freshness": "fresh" } } }
+      },
+      "schema": "<elided JSON Schema>"
+    },
+    "builder-code": { "info": { "a": "bc_hc2dhq09" }, "schema": "<elided JSON Schema>" },
+    "offer-receipt": {
+      "info": {
+        "offers": [
+          { "format": "eip712", "acceptIndex": 0, "payload": { "version": 1, "resourceUrl": "https://x402.ottoai.services/crypto-news", "scheme": "exact", "network": "eip155:8453", "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808", "amount": "1000", "validUntil": 1788784425 }, "signature": "0xe652adb611a55dbeb5a9a012a912b12361df3aa7ddabecf5bf27496f68d2b27522d32153bcc00477196d096c135ea72264b3d8ba2494d3ae2add042580a4fef41c" },
+          { "format": "eip712", "acceptIndex": 1, "payload": { "version": 1, "resourceUrl": "https://x402.ottoai.services/crypto-news", "scheme": "exact", "network": "eip155:8453", "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "payTo": "0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808", "amount": "1000", "validUntil": 1788784425 }, "signature": "0xe652adb611a55dbeb5a9a012a912b12361df3aa7ddabecf5bf27496f68d2b27522d32153bcc00477196d096c135ea72264b3d8ba2494d3ae2add042580a4fef41c" },
+          { "format": "eip712", "acceptIndex": 2, "payload": { "version": 1, "resourceUrl": "https://x402.ottoai.services/crypto-news", "scheme": "exact", "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "payTo": "6XcSfqJHr9vNW2vbiRaMqUYVm7shDgLepca54wUTDPN5", "amount": "1000", "validUntil": 1788784425 }, "signature": "0x271501f67832bf65120c2f0a22dcfc30f0813557811910c662f32177c1b1fd886b257c05138885c1f62a37540eaee1b23c101f10f5895b4d3ac45f88dfa45c0c1b" }
+        ]
+      },
+      "schema": "<elided JSON Schema>"
+    },
+    "otto-content-receipt": {},
+    "sign-in-with-x": {
+      "info": { "domain": "x402.ottoai.services", "uri": "https://x402.ottoai.services/crypto-news", "version": "1", "nonce": "6b6afb34eb592b0a0acbcb5cc9fe043f", "issuedAt": "2026-09-07T12:28:45.823Z", "statement": "Sign in to access Otto AI market intelligence", "resources": ["https://x402.ottoai.services/crypto-news"] },
+      "schema": "<elided JSON Schema>",
+      "supportedChains": [ { "chainId": "eip155:8453", "type": "eip191" }, { "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "type": "ed25519" } ]
+    }
+  },
+  "resource": {
+    "url": "https://x402.ottoai.services/crypto-news",
+    "description": "Importance-ranked crypto headlines with per-article source links and publish times, plus a sentiment-scored market brief. Regenerated hourly; meta carries the snapshot's age and a fresh/stale verdict.",
+    "iconUrl": "https://x402.ottoai.services/assets/otto-icon.png",
+    "mimeType": "application/json",
+    "serviceName": "Otto AI",
+    "tags": ["crypto news", "market news", "sentiment analysis", "breaking headlines"]
+  },
+  "x402Version": 2
 }
 ```
 
+The original testnet reconstruction (self-hosted `localhost:4021/weather`, Base
+Sepolia + Solana devnet, `amount "10000"` = $0.01) is superseded by this real
+capture. The wire shape is identical — same `accepts` menu structure, atomic-unit
+string `amount`, `maxTimeoutSeconds` 300, CAIP-2 `network`, v2 header names — which
+is exactly what the reconstruction predicted.
+
 Observations on the wire format:
 
-- **The 402 body is empty (`{}`).** Anything that reads the JSON body for payment
-  terms will find nothing — the terms are in the `payment-required` header,
-  base64-encoded. The `x402_requests` session wrapper reads the header; a naive
-  client that only inspects the body will silently fail.
-- **`accepts` is a LIST, not a single object.** The seller advertises a menu of
-  payment options (here: pay on Base Sepolia in USDC, *or* pay on Solana devnet)
-  and the **buyer chooses** which one to satisfy. The probe's EVM registration
-  picks the `eip155:84532` entry. Vendor evaluation in the main build has to treat
-  every 402 as "one or more offers," not "the price."
-- **`amount` is atomic units.** `"10000"` = $0.01 because USDC has 6 decimals
-  (10000 / 10^6 = 0.01). It is a decimal string, not a number. Never divide by
+- **The 402 body is not always empty.** The testnet Flask seller sent `{}` and put
+  everything in the `payment-required` header. ottoai sends a full JSON copy in the
+  body *and* the header, and its own `hint` says the header "remains the x402 v2
+  protocol contract." So: read the header, always; treat the body as a
+  convenience copy that may or may not be there. The `x402_requests` session
+  wrapper reads the header; a naive client that only inspects the body will
+  silently fail against sellers like the Flask one.
+- **`accepts` is a LIST, not a single object.** The seller advertises a menu and
+  the **buyer chooses**. ottoai's menu: plain `exact` on Base mainnet USDC, the
+  *same* on Base mainnet but `extra.assetTransferMethod: "permit2"`, and `exact`
+  on Solana. The SDK's EVM registration picked `accepts[0]` (plain
+  `transferWithAuthorization`, no Permit2 allowance needed). Vendor evaluation in
+  the main build has to treat every 402 as "one or more offers," not "the price,"
+  and know which transfer methods it can satisfy.
+- **`amount` is atomic units.** `"1000"` = $0.001 because USDC has 6 decimals
+  (1000 / 10^6 = 0.001). It is a decimal string, not a number. Never divide by
   10^18 out of Ethereum habit — USDC is 10^6.
 - **`maxTimeoutSeconds` is 300.** The signed authorization is only valid for five
   minutes. An agent that signs, then queues, then submits late will have its
   payment rejected as expired. Any planner that batches or delays payment steps
   needs to re-sign inside that window.
-- **`network` is CAIP-2** (`eip155:84532`), not a friendly name like
-  `base-sepolia`.
+- **`network` is CAIP-2** (`eip155:8453` mainnet, `eip155:84532` Sepolia), not a
+  friendly name like `base`.
+- **Some sellers pre-sign offers.** ottoai's `extensions.offer-receipt` carries
+  EIP-712 signatures over each `accepts` entry (`validUntil` ~70 min out) so a
+  buyer can pay without a second round trip. The standard SDK path ignores this
+  and does the normal 402 → sign → retry; it settled fine. Optional optimisation,
+  not a requirement.
 - v2 header names: `payment-required` (on the 402), `payment-signature` (on the
   retry), `payment-response` (on the settled 200). No `X-PAYMENT` — that is v1.
 
 ---
 
 ## 4. Settlement proof
+
+### 4a. Base Sepolia (testnet, self-hosted seller) — 2026-08-30
 
 | Field | Value |
 |---|---|
@@ -199,6 +264,41 @@ A 200 response is not proof of settlement — this is. BaseScan shows the USDC
 `Transfer` (buyer → seller, 0.01) inside a transaction **sent and paid for by the
 facilitator relayer** `0xd407…f1bf`. The buyer wallet is not the sender and paid
 no gas. This is the on-chain proof behind the no-gas-needed finding in section 8.
+
+### 4b. Base mainnet (real third-party Bazaar endpoint) — 2026-09-07
+
+Closes the last GREEN clause. `probe_02_settle.py` run unmodified against
+`https://x402.ottoai.services/crypto-news` (Otto AI — importance-ranked crypto
+news, a real commercial operator with docs, contact, and a money-back guarantee).
+Same buyer wallet as 4a; funded with 2.0 USDC on Base mainnet beforehand (no ETH).
+
+| Field | Value |
+|---|---|
+| Transaction hash | `0x44cb0f1e7bd5794e1d57ff10974fa1e544a43bd90796922e14d6a7e1cd43fcc3` |
+| Network | `eip155:8453` (Base **mainnet**) |
+| Payer (buyer) | `0xA85F4a77714431c4583f8adD0BC6Bd90f6Ce2CB0` |
+| Pay-to (seller) | `0x0E84dDEdAaE6A779c462C22a59F301EC31B6b808` |
+| Amount | `1000` atomic = **$0.001 USDC** (6 decimals) |
+| `accepts` entry paid | `accepts[0]` — `exact` / `eip155:8453` / plain `transferWithAuthorization` (not the Permit2 variant) |
+| Facilitator used | seller's config; relayer address `0xe74817f4cdc15844314812b2271276e64e890fae` (not one of ours, and different from the testnet relayer) |
+| `payment-response` | `{"success": true, "errorReason": null, "payer": "0xA85F…2CB0", "transaction": "0x44cb…fcc3", "network": "eip155:8453"}` |
+| Resource returned after payment | `{"status":"success","data":{"report":"...MARKET BRIEF... Bull/Bear Score: 45...","headlines":[...]}}` — real content, 8KB |
+| Block explorer link | https://basescan.org/tx/0x44cb0f1e7bd5794e1d57ff10974fa1e544a43bd90796922e14d6a7e1cd43fcc3 |
+| Verified independently on chain? | **YES** — `eth_getTransactionReceipt` via public Base RPC, 2026-09-07 |
+| Block | 50997392 (Base mainnet), 2026-09-07 12:28:51 UTC |
+| Status | `0x1` — Success |
+| From (tx sender) | `0xe748…0fae` — the facilitator's relayer; **neither buyer nor seller** |
+| Interacted with | USDC contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (Base mainnet USDC) |
+| ERC-20 transfer in the tx | `0xa85f…2cb0` → `0x0e84…b808`, exactly `1000` atomic (0.001 USDC) |
+| ETH value moved | 0 |
+| Gas | 86,486 gas × ~5 gwei ≈ `0.00000043` ETH — **paid by the relayer** `0xe748…0fae`, not the buyer |
+| Buyer wallet after | **1.999000 USDC** (was 2.000000; delta = exactly the price), **0 wei ETH**, **nonce 0** |
+
+The buyer wallet has still never sent a transaction (nonce 0) and still holds no
+ETH — on mainnet, same as testnet. It signed an off-chain EIP-3009
+authorization; relayer `0xe748…0fae` submitted `transferWithAuthorization` to the
+USDC contract and paid the gas. The `Transfer(from=buyer, to=seller, 1000)` log
+in that tx is the settlement.
 
 ---
 
@@ -243,10 +343,11 @@ codebase and each one gets a test that reads it on chain.
 |---|---|---|---|
 | SDK package | `x402` 2.21.0 (`x402-foundation/x402`, `python/x402`, commit `e398a9e`) | local reference clone | n/a |
 | Testnet facilitator | `https://x402.org/facilitator` — Base Sepolia + Solana devnet **only** | docs.x402.org/getting-started/quickstart-for-sellers | n/a — **doc only** |
-| Mainnet facilitator (option A) | `https://api.cdp.coinbase.com/platform/v2/x402` | docs.x402.org/getting-started/quickstart-for-sellers | discovery sub-path `GET /discovery/resources` returned `200` (no auth) on 2026-08-30; settle/verify not yet exercised |
-| Mainnet facilitator (option B) | `https://facilitator.payai.network` | docs.x402.org/getting-started/quickstart-for-sellers | discovery sub-path `GET /discovery/resources` returned `200` (no auth) on 2026-08-30; settle/verify not yet exercised |
+| Mainnet facilitator (option A) | `https://api.cdp.coinbase.com/platform/v2/x402` | docs.x402.org/getting-started/quickstart-for-sellers | discovery sub-path `GET /discovery/resources` returned `200` (no auth) on 2026-08-30; **our** buyer has not called this facilitator's settle/verify directly |
+| Mainnet facilitator (option B) | `https://facilitator.payai.network` | docs.x402.org/getting-started/quickstart-for-sellers | discovery sub-path `GET /discovery/resources` returned `200` (no auth) on 2026-08-30; **our** buyer has not called this facilitator's settle/verify directly |
+| Mainnet facilitator (exercised via seller) | relayer `0xe74817f4cdc15844314812b2271276e64e890fae` — whichever facilitator `x402.ottoai.services` is configured with (not disclosed in the 402) | §4b settlement | **YES — a real mainnet settle happened through it** 2026-09-07: `transferWithAuthorization` on mainnet USDC, `success: true`, block 50997392. In x402 v2 the buyer never picks the facilitator, so this is the one path we can attest works end to end. |
 | USDC (Base Sepolia) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | Circle official docs: developers.circle.com/stablecoins/usdc-contract-addresses (Testnet section, Base Sepolia) | **YES — read on chain 2026-08-30** via `https://sepolia.base.org` (chain id 84532): `symbol()` = `"USDC"`, `decimals()` = `6`; buyer `balanceOf` returned exactly the fauceted 20000000 |
-| USDC (Base mainnet) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | observed as the `asset` in the live 402 of ~13 independent Bazaar endpoints (2026-08-30); Circle docs mainnet section not re-fetched — do so before pinning | **YES — read on chain 2026-08-30** via `https://mainnet.base.org` (chain id 8453): `name()` = `"USD Coin"`, `symbol()` = `"USDC"`, `decimals()` = `6` |
+| USDC (Base mainnet) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | observed as the `asset` in the live 402 of ~13 independent Bazaar endpoints (2026-08-30); Circle docs mainnet section not re-fetched — do so before pinning | **YES — read on chain 2026-08-30** via `https://mainnet.base.org` (chain id 8453): `name()` = `"USD Coin"`, `symbol()` = `"USDC"`, `decimals()` = `6`. **Also confirmed by settlement 2026-09-07:** the mainnet settlement tx (§4b) `to`-address was this contract; its `Transfer` log moved exactly `1000` atomic buyer → seller. |
 | SpendPermissionManager | not sourced — this is a Base Account / Spend Permissions contract, not an x402 artifact; needs the Coinbase Base Account docs | — | no |
 | Base mainnet chain id | `8453` → CAIP-2 `eip155:8453` | docs.x402.org/getting-started/quickstart-for-sellers + flask README | no — **doc only** |
 | Base Sepolia chain id | `84532` → CAIP-2 `eip155:84532` | docs.x402.org/getting-started/quickstart-for-sellers + flask README | **YES** — RPC `eth_chainId` over `https://sepolia.base.org` returned `84532` on 2026-08-30 |
@@ -281,16 +382,15 @@ an off-chain authorization. See section 8, finding 1.
 
 | Item | Amount |
 |---|---|
-| Real money spent | **$0** — testnet only |
+| Real money spent | **$0.001** — one mainnet settlement (§4b) |
+| Real USDC funded into buyer wallet | ~$2.00 on Base mainnet (throwaway wallet); **1.999 remains** after the settlement |
+| Real ETH bought | **$0** — buyer needs no gas; the facilitator relayer pays it |
 | Testnet funds used | 0.01 Base Sepolia USDC (of 20 fauceted) + 0 ETH; facilitator paid the ~6.3e-7 ETH gas |
-| Mainnet USDC spent | $0 |
-| Elapsed time | 1 day — 2026-08-30. Desk research, both wallets, seller setup, first settlement, and the probe_03 Bazaar survey all same day. |
+| Elapsed time | 2 days of active work — 2026-08-30 (desk research, wallets, seller setup, testnet settlement, Bazaar survey) and 2026-09-07 (endpoint re-check, mainnet funding + settlement + on-chain verification). |
 
-Ceiling was $10 and five working days. Actual: $0 and 1 day. Well under both.
-Remaining spend to fully close GREEN: **one mainnet settlement** against a real
-Bazaar endpoint. Cheapest live candidates are ~$0.001 (e.g. `x402.ottoai.services`,
-`crypto.apitoll.cloud`), so ~$1 of real USDC covers funding + a handful of
-attempts. Still far inside the $10 ceiling.
+Ceiling was $10 and five working days. Actual: **$0.001 spent** ($2 funded, most
+of it recoverable) and 2 days. Well under both. GREEN is fully closed — no
+remaining spend.
 
 ---
 
@@ -301,12 +401,13 @@ wrongly? Write it down now, while it is still surprising.
 
 - **No public *tutorial* endpoint, but a huge public *marketplace*.** Every
   quickstart and Python example targets `http://localhost:4021`, so the *first*
-  402 had to come from a self-hosted seller (still true, and why probe_02 ran
-  local). But probe_03 then found the opposite of scarcity: the x402 Bazaar
-  discovery API is public and unauthenticated and lists **14k–28k** live
-  resources, the overwhelming majority on Base. The earlier working assumption
+  402 (probe_02, 2026-08-30) came from a self-hosted seller. But probe_03 then
+  found the opposite of scarcity: the x402 Bazaar discovery API is public and
+  unauthenticated and lists **14k–28k** live resources, the overwhelming majority
+  on Base — and on 2026-09-07 probe_02 settled unmodified against one of them
+  (`x402.ottoai.services`) on mainnet, first try. The earlier working assumption
   that this would land at AMBER "by construction" was wrong — see section 1,
-  now GREEN.
+  now GREEN with both networks proven.
 - **The v1/v2 header split is a live trap.** v1 used a single `X-PAYMENT` header
   and a hand-rolled 3-step flow; v2 uses `payment-required` / `payment-signature`
   / `payment-response` and a session wrapper that does it all. Third-party guides
@@ -393,26 +494,22 @@ wrongly? Write it down now, while it is still surprising.
 
 ## 9. Decision
 
-> **Proceed to week 2. Verdict GREEN pending one mainnet settlement.** A real
-> multi-vendor procurement basket on Base is viable — the vendor supply is not
-> the constraint it was assumed to be.
+> **Proceed to week 2. Verdict GREEN — no open items.** A real multi-vendor
+> procurement basket on Base is viable, and settlement is proven end to end on
+> both Base Sepolia and Base mainnet. The vendor supply is not the constraint it
+> was assumed to be.
 
-**Both halves of the gate are now answered:**
-- *Does settlement work?* Yes — proven on chain (section 4, Base Sepolia).
+**Both halves of the gate are answered, on both networks:**
+- *Does settlement work?* Yes — proven on chain twice: Base Sepolia against a
+  self-hosted seller (§4a) and Base **mainnet** against a real third-party Bazaar
+  endpoint (§4b, tx `0x44cb…fcc3`, $0.001 USDC, on-chain verified).
 - *Do real endpoints exist?* Yes — 13 live-verified in a 16-endpoint spot check,
   from 275 distinct Base operator domains in a 600-item sample, from a public
-  14k/28k catalog (section 2).
+  14k/28k catalog (section 2); three re-verified live 2026-09-07.
 
-**One open item to fully close GREEN:** run one real payment against a live
-Bazaar endpoint on Base **mainnet**, via a mainnet facilitator (CDP or PayAI).
-Pick a ~$0.001 endpoint; fund the buyer wallet with ~$1–2 of real USDC on Base
-mainnet; reuse `probe_02_settle.py` unchanged (it takes a URL and reads the
-network from the 402). Record the tx in a short addendum to section 4. This is
-the only remaining spend and is well inside the $10 ceiling.
-
-**Then close week 1:**
-1. Paste the verbatim decoded `payment-required` object from the probe_02 run
-   into section 3, replacing the reconstruction.
+**Remaining close-out:**
+1. ~~Paste the verbatim decoded `payment-required` object into section 3~~ — done
+   (2026-09-07, the mainnet ottoai capture).
 2. Archive `probe/` to `docs/archive/probe/` per `probe/README.md` (this file
    survives).
 
@@ -424,10 +521,24 @@ the only remaining spend and is well inside the $10 ceiling.
 - Vendor evaluation must score quality (the catalog is mostly toys), treat
   `accepts` as a menu, and tolerate both `x402Version` 1 and 2 and both
   `eip155:8453` and bare `"base"` network ids.
+- **`accepts` entries can carry `extra.assetTransferMethod: "permit2"`** — a
+  different signing path (Permit2 allowance) than plain EIP-3009
+  `transferWithAuthorization`. ottoai advertised both; the SDK picked the plain
+  one. The agent must be able to tell which entries it can actually satisfy and
+  skip the rest, not just pick `accepts[0]`.
+- **Some sellers send the terms in the body too, and some pre-sign offers**
+  (`extensions.offer-receipt`). Neither changes the flow — read the header, do
+  the normal 402 → sign → retry — but the parser must not choke on a fat
+  `extensions` object full of vendor-specific sub-schemas.
 - **Best-price / cheapest-vendor is not a demo feature for now** — N ≈ 1 per
   category. Build the basket from named real vendors.
 - Two separate demo environments: synthetic Base Sepolia (free, self-hosted)
   and real Base mainnet (Bazaar vendors, real USDC). Choose per demo.
 - The agent gets its own `x402[requests,evm]` install from the local clone.
-- Buyer wallet funded in USDC only, no ETH — the facilitator pays gas.
+- Buyer wallet funded in USDC only, no ETH — the facilitator pays gas. **Proven
+  on mainnet 2026-09-07:** buyer nonce still 0, ETH balance still 0 after a
+  successful mainnet settlement.
 - Re-sign authorizations inside the 300s window; never queue a signed payment.
+- The mainnet buyer wallet `0xA85F…2CB0` holds ~1.999 real USDC. It is a
+  throwaway (key in `probe/.env`, git-ignored). Sweep or reuse it deliberately;
+  do not let it accrete funds.
