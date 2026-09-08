@@ -14,8 +14,9 @@ import requests
 
 from payments.constants import USDC_BY_CHAIN
 from payments.errors import (
-    EndpointUnreachable, InsufficientBalance, NetworkNotAllowed, NoSatisfiableOffer,
-    OfferOverCap, SettlementMismatch, SettlementRejected, UnexpectedStatus,
+    BalanceCheckUnavailable, EndpointUnreachable, InsufficientBalance, NetworkNotAllowed,
+    NoSatisfiableOffer, OfferOverCap, SettlementMismatch, SettlementNotConfirmed,
+    SettlementRejected, UnexpectedStatus,
 )
 from payments.settlement import ExpectedSettlement, VerifiedSettlement, verify_settlement
 from payments.wallet import Wallet
@@ -169,43 +170,88 @@ def pay(url: str, wallet: Wallet, *, max_amount: Decimal,
         raise OfferOverCap(offer.amount, max_amount)
     if offer.chain_id not in network_allowlist:
         raise NetworkNotAllowed(f"{offer.network} not in {network_allowlist}")
-    if wallet.usdc_balance(offer.chain_id) < offer.amount:
+    try:
+        balance = wallet.usdc_balance(offer.chain_id)
+    except ConnectionError as exc:
+        # No money has moved, but a bare ConnectionError must not escape the
+        # taxonomy (I-1).
+        raise BalanceCheckUnavailable(
+            f"could not read USDC balance on chain {offer.chain_id}: {exc}") from exc
+    if balance < offer.amount:
         raise InsufficientBalance(f"balance < {offer.amount} USDC on chain {offer.chain_id}")
 
-    from x402 import x402ClientSync
+    from x402 import NoMatchingRequirementsError, x402ClientSync
     from x402.http import x402HTTPClientSync
     from x402.http.clients import x402_requests
     from x402.mechanisms.evm.exact.register import register_exact_evm_client
 
-    x_client = x402ClientSync().set_spend_controls({"max_amount_per_payment": f"${max_amount}"})
+    # Authorize only the *agreed price*, not the caller's policy ceiling: the
+    # pre-flight already checked offer.amount <= max_amount against the unpaid
+    # probe, and a seller that re-prices between the probe and the paying request
+    # must not be able to draw more than the quote (I-2). format(_, "f") renders
+    # a plain decimal string -- the SDK's parse_money rejects exponent form, e.g.
+    # str(Decimal("1E-2")) (M-1). The "$" prefix is what parse_money expects.
+    x_client = x402ClientSync().set_spend_controls(
+        {"max_amount_per_payment": f"${format(offer.amount, 'f')}"})
     register_exact_evm_client(x_client, wallet.x402_signer())
     http_client = x402HTTPClientSync(x_client)
 
-    with x402_requests(x_client) as session:
-        resp = session.get(url, timeout=timeout)
+    try:
+        with x402_requests(x_client) as session:
+            resp = session.get(url, timeout=timeout)
+    except NoMatchingRequirementsError as exc:
+        # The SDK rejected every 402 requirement against our spend control --
+        # the seller re-priced above the authorized amount between probe and pay.
+        # This fires before anything is signed, so no money moved.
+        raise NoSatisfiableOffer(
+            f"{url}: seller re-priced above the authorized {offer.amount} USDC: {exc}") from exc
 
-    if resp.status_code != 200:
-        raise UnexpectedStatus(resp.status_code, url)
-
+    # Read the settlement header BEFORE the status check: a seller that settles
+    # and then 500s on delivery still moved money, and the tx hash must survive
+    # (I-1). x402 2.21.0 SettleResponse.success/.transaction are required fields,
+    # so direct attribute access surfaces a schema change instead of masking it
+    # (punch-list #5).
     try:
         settle = http_client.get_payment_settle_response(lambda name: resp.headers.get(name))
-    except ValueError as exc:
-        raise SettlementRejected(f"no PAYMENT-RESPONSE from {url}") from exc
+    except ValueError:
+        settle = None
 
-    if not getattr(settle, "success", False):
-        raise SettlementRejected(f"facilitator reported success != true for {url}")
-    tx_hash = getattr(settle, "transaction", None)
+    if settle is None:
+        if resp.status_code == 402:
+            raise SettlementRejected(f"{url} still 402 after the payment retry")
+        if resp.status_code != 200:
+            raise UnexpectedStatus(resp.status_code, url)
+        raise SettlementRejected(f"no PAYMENT-RESPONSE from {url}")
+
+    if not settle.success:
+        raise SettlementRejected(
+            f"facilitator reported success != true for {url}",
+            tx_hash=settle.transaction or None)
+    tx_hash = settle.transaction
     if not tx_hash:
         raise SettlementRejected(f"PAYMENT-RESPONSE for {url} carried no transaction hash")
 
-    verified = verify_settlement(
-        tx_hash,
-        ExpectedSettlement(payer=wallet.address, pay_to=offer.pay_to,
-                           asset=offer.asset, amount=offer.amount),
-        network=offer.chain_id,
-    )
+    try:
+        verified = verify_settlement(
+            tx_hash,
+            ExpectedSettlement(payer=wallet.address, pay_to=offer.pay_to,
+                               asset=offer.asset, amount=offer.amount),
+            network=offer.chain_id,
+        )
+    except ConnectionError as exc:
+        # Money moved; we just cannot reach an RPC to confirm it. Keep the hash.
+        raise SettlementNotConfirmed(tx_hash, f"no RPC reachable: {exc}") from exc
+
     if not verified.matches_expected:
-        raise SettlementMismatch(verified.mismatch or "unknown")
+        raise SettlementMismatch(verified.mismatch or "unknown",
+                                 tx_hash=tx_hash, verified=verified)
+
+    if resp.status_code != 200:
+        # Settled and reconciled on-chain, but the seller did not deliver the
+        # resource. Money moved -- surface the hash, not a bare status.
+        raise SettlementRejected(
+            f"{url}: settled and verified on-chain but delivery returned HTTP "
+            f"{resp.status_code}", tx_hash=tx_hash)
 
     try:
         resource = resp.json()

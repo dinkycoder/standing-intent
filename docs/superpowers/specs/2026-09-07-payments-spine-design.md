@@ -203,8 +203,13 @@ On a price tie between satisfiable offers, `best_satisfiable` is the first in
 4. `offer.chain_id not in network_allowlist` → raise `NetworkNotAllowed`.
 5. `wallet.usdc_balance(offer.chain_id) < offer.amount` → raise `InsufficientBalance`.
 6. Build the SDK client: `x402ClientSync().set_spend_controls(
-   {"max_amount_per_payment": f"${max_amount}"})`; `register_exact_evm_client(
-   client, wallet.x402_signer())`.
+   {"max_amount_per_payment": f"${format(offer.amount, 'f')}"})`;
+   `register_exact_evm_client(client, wallet.x402_signer())`. `max_amount` is the
+   policy ceiling checked in pre-flight; `offer.amount` is what we authorize, so
+   the tighter bound binds at the SDK layer and a seller re-pricing between probe
+   and payment cannot draw more than the quoted price. `format(_, "f")` renders a
+   plain decimal string — the SDK's `parse_money` rejects exponent form (e.g.
+   `str(Decimal("1E-2"))`).
 7. `with x402_requests(client) as session: resp = session.get(url, timeout=…)`.
    The SDK performs 402 → sign → retry synchronously and immediately, inside the
    300-second `max_timeout_seconds` window.
