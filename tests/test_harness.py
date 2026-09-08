@@ -1,11 +1,9 @@
-import math
 from decimal import Decimal
 
 import pytest
 
 from evals.agent_protocol import agent
 from evals.executor import ExecutedPurchase
-from evals.grading import GradeOutcome
 from evals.harness import (
     cheapest_in_policy_vendor,
     in_policy_vendors,

@@ -25,7 +25,7 @@ def test_one_real_mainnet_settlement():
     wallet = LocalWallet.from_env()
     outcome = pay(ENDPOINT, wallet, max_amount=Decimal("0.01"), network_allowlist=(8453,))
     assert outcome.paid is True
-    assert outcome.network == 8453
+    assert outcome.chain_id == 8453
     assert outcome.verified.matches_expected is True
     assert outcome.verified.payer_paid_gas is False
     print(f"\nMAINNET GATE: tx={outcome.tx_hash} amount={outcome.amount_paid} "

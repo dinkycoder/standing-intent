@@ -61,6 +61,19 @@ Copy-Item probe\.env.example probe\.env   # then fill it in
 Read [`docs/WEEK1_GATE.md`](docs/WEEK1_GATE.md) before running anything. Do the first probe by
 hand with `curl.exe` rather than generating code for it.
 
+### Installing the payments deps on Windows
+
+`requirements.txt` installs the `x402` SDK from a pinned git URL. Its nested Solidity
+submodules blow past `MAX_PATH`, so a fresh Windows clone must enable long paths first or the
+`pip install` fails partway through:
+
+```powershell
+git config --global core.longpaths true
+python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+Linux CI is unaffected.
+
 ## Principles
 
 - **Non-custodial, always.** User funds never touch this service. This is a legal boundary.

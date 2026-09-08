@@ -172,7 +172,7 @@ class PaymentOutcome:
     paid: bool                      # True only after on-chain verification
     offer: Offer                    # which offer was paid
     tx_hash: str
-    network: str
+    chain_id: int                   # int chain id (e.g. 8453); consumed as int by every reader
     amount_paid: Decimal            # from the verified Transfer log, NOT the SDK's claim
     pay_to: str                     # from the verified Transfer log
     resource: bytes | dict          # the paid response body

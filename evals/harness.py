@@ -124,6 +124,11 @@ def run_eval(
         and ex[0].vendor_id == target.vendor_id
     )
 
+    # cost_per_completed_tx_usdc is the agent's SELF-REPORTED cost_usdc only
+    # (LLM tokens). CLAUDE.md defines the metric as "LLM tokens + gas + fees";
+    # verified on-chain spend is now available as executed[].amount_paid and can
+    # be folded in later (M-5). Not changed here to keep the metric's meaning
+    # stable across the Week-3 branch.
     completed = [r for r, o in zip(results, outcomes) if o is GradeOutcome.PASS]
     if completed:
         cost_per_completed = sum(

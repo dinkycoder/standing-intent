@@ -23,7 +23,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import threading
 
 from flask import Flask, jsonify
 
@@ -116,29 +115,11 @@ def _silence_werkzeug() -> None:
     """Quiet the dev-server request log and Flask's startup banner.
 
     The banner is a bare ``print`` (not a log record), so the logger level alone
-    does not remove it.
+    does not remove it. This monkeypatches ``flask.cli.show_server_banner``
+    process-wide with no restore -- acceptable in a test-only fixture helper.
     """
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
     import flask.cli
 
     flask.cli.show_server_banner = lambda *a, **k: None  # type: ignore[assignment]
-
-
-def run_seller(pay_to: str, port: int, *, network: str = DEFAULT_NETWORK) -> threading.Thread:
-    """Start `build_seller_app` on 127.0.0.1:`port` in a daemon thread via app.run().
-
-    Convenience for callers that want a raw background thread and will let it die
-    with the process. Tests that need deterministic teardown should use the
-    `x402_seller` fixture, which drives a shutdown-able `werkzeug.serving` server.
-    """
-    _silence_werkzeug()
-    app = build_seller_app(pay_to, network=network)
-    thread = threading.Thread(
-        target=lambda: app.run(
-            host="127.0.0.1", port=port, debug=False, use_reloader=False
-        ),
-        daemon=True,
-    )
-    thread.start()
-    return thread

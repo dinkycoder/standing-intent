@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 import requests
 
-from payments.client import Offer, PaymentQuote, inspect_offer, parse_terms
+from payments.client import PaymentQuote, inspect_offer, parse_terms
 from payments.errors import EndpointUnreachable, UnexpectedStatus
 
 DATA = Path("tests/data")

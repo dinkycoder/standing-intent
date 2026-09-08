@@ -168,7 +168,7 @@ class PaymentOutcome:
     paid: bool
     offer: Offer
     tx_hash: str
-    network: int
+    chain_id: int             # consumed as an int chain id everywhere; spec's CAIP-2 str drift (M-6)
     amount_paid: Decimal
     pay_to: str
     resource: object
@@ -276,7 +276,7 @@ def pay(url: str, wallet: Wallet, *, max_amount: Decimal,
         resource = resp.content
 
     return PaymentOutcome(
-        url=url, paid=True, offer=offer, tx_hash=tx_hash, network=offer.chain_id,
+        url=url, paid=True, offer=offer, tx_hash=tx_hash, chain_id=offer.chain_id,
         amount_paid=verified.amount_usdc, pay_to=verified.transfer_to,
         resource=resource, verified=verified, quote=quote,
     )

@@ -42,10 +42,18 @@ harness does not lie to itself.
 
 ## Known limitations
 
-- **Grading trusts the agent's self-reported purchases.** `grade()` reads
-  `AgentResult.purchases` (vendor id + price paid) and never reconciles it against
-  `task.environment.vendors` — it does not check the vendor exists in the catalog
-  or that the reported price matches the catalog price. An agent that under-reports
-  a price could grade `PASS` plus best-price capture. Moot for the Week-2 stub
-  (it buys nothing); real reconciliation is deferred to the Week-3 payments spine,
-  where settlement is on-chain and independently verifiable.
+- **`cost_per_completed_tx_usdc` is tokens-only.** It averages the agent's
+  self-reported `cost_usdc` (LLM tokens) over the PASS trials. CLAUDE.md defines
+  the metric as "LLM tokens + gas + fees"; the verified on-chain spend is now
+  available as `executed[].amount_paid` and can be folded in later (M-5). The
+  field's meaning was kept stable across the Week-3 branch.
+
+## Reconciliation (Week 3)
+
+`grade()` takes a third argument, `executed: list[ExecutedPurchase]` — the
+verified purchase record the `PaymentExecutor` produced (on-chain for
+`real_x402`, catalog for `synthetic`). Every claimed `AgentResult.purchases`
+entry must pair 1:1 with a distinct verified execution (same vendor, price within
+one USDC atomic unit); an unmatched or duplicated claim is `UNVERIFIED_CLAIM`,
+graded before budget or vendor checks. `budget_violations` is counted directly
+from the verified amounts, independent of the grade outcome.

@@ -2,7 +2,6 @@ import os
 from decimal import Decimal
 
 import pytest
-import requests
 
 from payments.client import pay
 from payments.errors import NoSatisfiableOffer, UnexpectedStatus

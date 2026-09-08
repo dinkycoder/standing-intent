@@ -1,4 +1,3 @@
-import json
 import os
 from decimal import Decimal
 from pathlib import Path
@@ -17,7 +16,7 @@ skip_no_key = pytest.mark.skipif(not os.environ.get("X402_WALLET_KEY"), reason="
 
 
 @agent("real-buyer")
-def real_buyer(task, rng_seed, executor):
+def real_buyer(task, _rng_seed, executor):
     vendor = task.environment.vendors[0]
     p = executor.pay(vendor.url, max_amount=Decimal("0.05"))
     return AgentResult(purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],

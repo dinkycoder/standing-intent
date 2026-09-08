@@ -107,6 +107,7 @@ def x402_seller():
     finally:
         server.shutdown()
         thread.join(timeout=5)
+        server.server_close()   # release the listening socket, not just the serve loop
 
 
 def wire_real_x402_task(task, base_url):
