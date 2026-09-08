@@ -29,7 +29,8 @@ USDC_BY_CHAIN = {
 }
 
 # Facilitators -- docs.x402.org/getting-started/quickstart-for-sellers
-# test_testnet_facilitator_is_reachable pins this: GET /supported (capability list) returns <500
+# test_testnet_facilitator_advertises_exact_base_sepolia pins this: GET /supported must
+# advertise a kind with scheme "exact" and network "eip155:84532" (skips only on transport/5xx)
 FACILITATOR_TESTNET = "https://x402.org/facilitator"          # Base Sepolia + Solana devnet only
 FACILITATOR_CDP = "https://api.cdp.coinbase.com/platform/v2/x402"   # GET /discovery/resources -> 200 no auth
 FACILITATOR_PAYAI = "https://facilitator.payai.network"            # GET /discovery/resources -> 200 no auth

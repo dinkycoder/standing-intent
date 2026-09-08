@@ -15,7 +15,8 @@ There is no private key here: `pay_to` is a plain address passed in by the
 caller (CLAUDE.md hard rule 1 -- this process never holds keys or funds).
 
 The middleware's sync facilitator client needs `httpx` (it is not pulled by
-`x402[flask]`); it is pinned in requirements.txt for this reason.
+`x402[flask]`); it is pinned in requirements-dev.txt for this reason (this
+package is test-only).
 """
 
 from __future__ import annotations
