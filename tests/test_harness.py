@@ -148,6 +148,30 @@ def test_run_eval_overspend_reports_budget_violations_and_zero_pass(sample_task_
     assert report.cost_per_completed_tx_usdc is None
 
 
+def test_overcap_execution_and_misreport_counts_both(sample_task):
+    # The agent really executes two over-cap buys (0.01 + 0.08 = 0.09 > the 0.05
+    # cap) AND misreports the second line's price. grade() returns
+    # UNVERIFIED_CLAIM (reconciliation fails before the budget check is reached),
+    # but budget_violations is counted from the verified executions directly, so
+    # a run that overspent on-chain can never report budget_violations == 0 (C-1).
+    @agent("overcap-and-liar")
+    def run_task(task, rng_seed, executor):
+        a = executor.pay("v1", max_amount=Decimal("999"))
+        b = executor.pay("v2", max_amount=Decimal("999"))
+        return AgentResult(
+            purchases=[
+                Purchase(vendor_id=a.vendor_id, price_usdc=a.amount_paid),
+                Purchase(vendor_id=b.vendor_id, price_usdc=Decimal("0.999")),  # misreport
+            ],
+            touchpoints=1,
+        )
+
+    report = run_eval(sample_task, run_task, n_trials=8)
+    assert report.unverified_claims == 8
+    assert report.budget_violations == 8
+    assert report.outcomes == ["unverified_claim"] * 8
+
+
 def test_run_eval_wrong_vendor_is_fail_not_violation(sample_task_dict):
     # v2's shared catalog price (0.08) is over the 0.05 cap, so buying it would
     # grade BUDGET_VIOLATION under the still-2-arg grade. Re-price v2 to 0.04 so

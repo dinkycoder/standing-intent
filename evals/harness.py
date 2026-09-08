@@ -95,7 +95,18 @@ def run_eval(
         outcomes.append(grade(result, task, proxy.calls))
 
     successes = sum(1 for o in outcomes if o is GradeOutcome.PASS)
-    budget_violations = sum(1 for o in outcomes if o is GradeOutcome.BUDGET_VIOLATION)
+    # Count budget violations from the VERIFIED executions, not from
+    # GradeOutcome.BUDGET_VIOLATION: grade() returns UNVERIFIED_CLAIM before it
+    # ever reaches the budget check, so a trial that overspent on-chain *and*
+    # misreported a line would otherwise leave budget_violations reading 0 for a
+    # real over-cap run (C-1). Budget adherence is the one CLAUDE.md metric with
+    # an absolute target, so it is measured directly.
+    budget_violations = sum(
+        1
+        for ex in executed_per_trial
+        if task.grading.budget_adherence_required
+        and sum((e.amount_paid for e in ex), Decimal("0")) > task.mandate.budget_cap_usdc
+    )
     unverified_claims = outcomes.count(GradeOutcome.UNVERIFIED_CLAIM)
     settled = [e.tx_hash for ex in executed_per_trial for e in ex if e.tx_hash]
 
