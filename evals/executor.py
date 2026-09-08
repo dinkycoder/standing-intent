@@ -46,14 +46,28 @@ class RealX402Executor:
                  task: TaskSpec | None = None):
         self._wallet = wallet
         self._allow = network_allowlist
-        self._url_to_id = (
-            {v.url: v.vendor_id for v in task.environment.vendors if v.url}
-            if task else {})
+        self._url_to_id: dict[str, str] = {}
+        if task:
+            for v in task.environment.vendors:
+                if not v.url:
+                    continue
+                if v.url in self._url_to_id:
+                    # One URL must resolve to exactly one vendor_id, or grading
+                    # rule 4 (e.vendor_id == exp.vendor_id) can PASS a purchase
+                    # the agent did not choose (I-4).
+                    raise ValueError(
+                        f"two vendors share url {v.url!r}: "
+                        f"{self._url_to_id[v.url]!r} and {v.vendor_id!r}")
+                self._url_to_id[v.url] = v.vendor_id
 
     def pay(self, target: str, *, max_amount: Decimal) -> ExecutedPurchase:
         outcome = pay(target, self._wallet, max_amount=max_amount,
                       network_allowlist=self._allow)   # re-raises PaymentError
+        # An unmapped target gets a sentinel that can never equal a catalog
+        # vendor_id -- never the bare URL, which is untyped garbage in a typed
+        # field and a latent false PASS (I-4).
+        vendor_id = self._url_to_id.get(target) or f"unmapped:{target}"
         return ExecutedPurchase(
-            vendor_id=self._url_to_id.get(target, target),
+            vendor_id=vendor_id,
             url=target, amount_paid=outcome.amount_paid, pay_to=outcome.pay_to,
             tx_hash=outcome.tx_hash, verified=outcome.paid, resource=outcome.resource)

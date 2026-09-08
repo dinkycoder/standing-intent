@@ -33,12 +33,32 @@ def test_synthetic_is_a_payment_executor(sample_task):
 def test_real_executor_maps_outcome():
     outcome = Mock(paid=True, amount_paid=Decimal("0.01"), pay_to="0xabc",
                    tx_hash="0xdead", resource={"ok": 1})
+    wallet = Mock()
     with patch("evals.executor.pay", return_value=outcome) as pay_mock:
-        ex = RealX402Executor(wallet=Mock(), network_allowlist=(84532,))
+        ex = RealX402Executor(wallet=wallet, network_allowlist=(84532,))
         p = ex.pay("http://seller/weather-data", max_amount=Decimal("0.05"))
-    pay_mock.assert_called_once()
+    # Assert the forwarded args, not just the call count: a bare
+    # assert_called_once() would pass a swapped-argument bug (punch-list #7).
+    pay_mock.assert_called_once_with("http://seller/weather-data", wallet,
+                                     max_amount=Decimal("0.05"),
+                                     network_allowlist=(84532,))
     assert p.verified is True and p.amount_paid == Decimal("0.01")
     assert p.tx_hash == "0xdead" and p.url == "http://seller/weather-data"
+    assert p.pay_to == "0xabc" and p.resource == {"ok": 1}
+    # No task -> URL is unmapped -> a sentinel that can never equal a catalog id,
+    # never the bare URL (I-4).
+    assert p.vendor_id == "unmapped:http://seller/weather-data"
+
+
+def test_real_executor_rejects_duplicate_vendor_urls(sample_task_dict):
+    from evals.models import TaskSpec
+
+    sample_task_dict["environment"]["kind"] = "real_x402"
+    sample_task_dict["environment"]["vendors"][0]["url"] = "http://seller/weather-data"
+    sample_task_dict["environment"]["vendors"][1]["url"] = "http://seller/weather-data"
+    task = TaskSpec.model_validate(sample_task_dict)
+    with pytest.raises(ValueError, match="share url"):
+        RealX402Executor(wallet=Mock(), task=task)
 
 
 def test_real_executor_reraises_payment_error():

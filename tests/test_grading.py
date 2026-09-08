@@ -80,3 +80,13 @@ def test_claim_amount_mismatch_is_unverified(sample_task, make_result, make_exec
     result = make_result(purchases=[("v1", "0.01")])
     executed = make_executed([("v1", "0.02")])
     assert grade(result, sample_task, executed) is GradeOutcome.UNVERIFIED_CLAIM
+
+
+def test_duplicate_claim_backed_by_one_execution_is_unverified(sample_task, make_result, make_executed):
+    # Two identical claimed lines, but the executor made a single purchase. Greedy
+    # 1:1 pairing consumes the one execution against the first claim; the second
+    # has nothing left to reconcile against -> UNVERIFIED_CLAIM (M-2). `any()`
+    # matching would have waved both through.
+    result = make_result(purchases=[("v1", "0.01"), ("v1", "0.01")])
+    executed = make_executed([("v1", "0.01")])
+    assert grade(result, sample_task, executed) is GradeOutcome.UNVERIFIED_CLAIM

@@ -21,21 +21,23 @@ from evals.models import AgentResult, EvalReport, TaskSpec, Vendor
 _PASS_K_VALUES = (4, 8)
 
 
-class _RecordingExecutor:
-    """Proxy around a PaymentExecutor that records every purchase it returns.
+def _recording_view(inner) -> "tuple[object, list[ExecutedPurchase]]":
+    """A per-trial view the agent calls, plus the harness-side record.
 
-    run_eval wraps a fresh one per trial. Task 11 reconciles ``.calls`` against
-    the agent's self-reported purchases; until then the record is unused.
+    The agent receives only an object with ``pay()``. The verified-purchase list
+    is a closure local the agent has no attribute path to -- the record is not
+    the agent's to write (M-3). grading reconciles the agent's self-report
+    against this list.
     """
+    calls: list[ExecutedPurchase] = []
 
-    def __init__(self, inner):
-        self._inner = inner
-        self.calls: list[ExecutedPurchase] = []
+    class _View:
+        def pay(self, target, *, max_amount):
+            p = inner.pay(target, max_amount=max_amount)
+            calls.append(p)
+            return p
 
-    def pay(self, target, *, max_amount):
-        p = self._inner.pay(target, max_amount=max_amount)
-        self.calls.append(p)
-        return p
+    return _View(), calls
 
 
 def pass_k(successes: int, n_trials: int, k: int) -> float:
@@ -84,15 +86,15 @@ def run_eval(
     outcomes: list[GradeOutcome] = []
     executed_per_trial: list[list[ExecutedPurchase]] = []
     for i in range(n_trials):
-        proxy = _RecordingExecutor(base_executor)
-        result = agent_fn(task, base_seed + i, proxy)
+        view, calls = _recording_view(base_executor)
+        result = agent_fn(task, base_seed + i, view)
         if not isinstance(result, AgentResult):
             raise TypeError(
                 f"agent {agent_id!r} returned {type(result)!r}, expected AgentResult"
             )
         results.append(result)
-        executed_per_trial.append(proxy.calls)
-        outcomes.append(grade(result, task, proxy.calls))
+        executed_per_trial.append(calls)
+        outcomes.append(grade(result, task, calls))
 
     successes = sum(1 for o in outcomes if o is GradeOutcome.PASS)
     # Count budget violations from the VERIFIED executions, not from
@@ -115,7 +117,9 @@ def run_eval(
         1
         for ex, o in zip(executed_per_trial, outcomes)
         if target is not None
-        and o is not GradeOutcome.BUDGET_VIOLATION
+        # Exclude BUDGET_VIOLATION and UNVERIFIED_CLAIM trials: neither is a
+        # clean "did it pick the cheapest in-policy vendor" data point (M-4).
+        and o not in (GradeOutcome.BUDGET_VIOLATION, GradeOutcome.UNVERIFIED_CLAIM)
         and len(ex) == 1
         and ex[0].vendor_id == target.vendor_id
     )

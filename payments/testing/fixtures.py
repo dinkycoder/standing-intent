@@ -20,8 +20,12 @@ import pytest
 from payments import constants
 from payments.testing.seller import _silence_werkzeug, build_seller_app
 
-# Overridden when X402_WALLET_KEY is set -- see x402_seller below. Checksum-cased
-# so it round-trips through eth_account / the x402 middleware unchanged.
+# The seller's recipient. Deliberately NOT the buyer's own address: with a
+# self-send, expected.payer == expected.pay_to and verify_settlement's
+# transfer_from / transfer_to checks are both satisfied by the same address, so a
+# swapped-direction log decode would go undetected in the one end-to-end test
+# (I-6). Costs a fraction of a testnet USDC per manual integration run.
+# Checksum-cased so it round-trips through eth_account / the x402 middleware.
 _TEST_PAY_TO = "0x000000000000000000000000000000000000bEEF"
 
 _READY_TIMEOUT_SECONDS = 5.0
@@ -80,19 +84,16 @@ def _require_testnet_facilitator() -> None:
 
 @pytest.fixture
 def x402_seller():
-    """Start the x402 test seller on a controllable server; yield its base URL."""
-    import os
+    """Start the x402 test seller on a controllable server; yield its base URL.
 
+    The seller pays to `_TEST_PAY_TO`, which is never the buyer wallet -- so the
+    integration test's transfer_from / transfer_to reconciliation is real (I-6).
+    """
     from werkzeug.serving import make_server
 
     _require_testnet_facilitator()
 
     pay_to = _TEST_PAY_TO
-    key = os.environ.get("X402_WALLET_KEY")
-    if key:
-        from eth_account import Account
-
-        pay_to = Account.from_key(key).address
 
     _silence_werkzeug()
     port = _free_port()
@@ -109,12 +110,18 @@ def x402_seller():
 
 
 def wire_real_x402_task(task, base_url):
-    """Return a copy of `task` with each vendor `url` set to `{base_url}/{category}`.
+    """Return a copy of `task` with each vendor `url` pointed at a live seller.
 
     The `real_x402` task specs (Task 13) carry `environment.kind == "real_x402"`
-    and vendors with `url: null`; this points them at a live seller instance.
+    and vendors with `url: null`; this points them at a running seller instance.
+
+    The URL is `{base_url}/{category}?v={vendor_id}`: the seller routes on the
+    path (`/weather-data`, `/news-data`) and ignores the query string, but the
+    `?v=` segment keeps the URL unique per vendor so `RealX402Executor._url_to_id`
+    does not collapse two same-category vendors onto one id (I-4). One URL must
+    resolve to exactly one vendor_id.
     """
     data = task.model_dump()
     for vendor in data["environment"]["vendors"]:
-        vendor["url"] = f"{base_url}/{vendor['category']}"
+        vendor["url"] = f"{base_url}/{vendor['category']}?v={vendor['vendor_id']}"
     return type(task).model_validate(data)

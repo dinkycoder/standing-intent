@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from evals.agent_protocol import agent
+from evals.executor import ExecutedPurchase
 from evals.grading import GradeOutcome
 from evals.harness import (
     cheapest_in_policy_vendor,
@@ -116,11 +117,8 @@ def test_run_eval_counts_unverified_claims(sample_task):
 
 
 def test_best_price_capture_counts_target_vendor(sample_task):
-    # sample_task target = v1 (catalog 0.01, cap 0.05). The agent pays v1 through
-    # the executor and reports the EXECUTED purchase honestly. A synthetic
-    # executor can't overpay, so the Week-2 "above catalog" nuance is now
-    # enforced structurally -- grading rule 4's amount_paid <= max_price_usdc
-    # still bounds the price.
+    # sample_task target = v1 (catalog 0.01, cap 0.05). Agent pays v1 and reports
+    # the executed purchase honestly.
     @agent("fake")
     def run_task(task, rng_seed, executor):
         p = executor.pay("v1", max_amount=Decimal("999"))
@@ -132,6 +130,52 @@ def test_best_price_capture_counts_target_vendor(sample_task):
     assert report.best_price_capture_rate == 1.0
     assert report.pass_1 == 1.0
     assert report.unverified_claims == 0
+
+
+class _OverpayExecutor:
+    """Pays the target vendor, but at MORE than its catalog price -- the case
+    RealX402Executor can hit (amount_paid is the on-chain amount). SyntheticExecutor
+    cannot, which is why the discriminator needs its own executor (I-5)."""
+
+    def pay(self, target, *, max_amount):
+        return ExecutedPurchase(vendor_id="v1", url=None, amount_paid=Decimal("0.03"),
+                                pay_to=None, tx_hash=None, verified=True, resource=None)
+
+
+def test_best_price_capture_is_vendor_identity_not_price(sample_task):
+    # v1 is the target/cheapest-identity vendor (catalog 0.01). The executor pays
+    # v1 at 0.03 -- over catalog, under the 0.05 cap and v1's 0.05 max_price.
+    # Capture is a vendor-IDENTITY metric: it must still count 1.0 (I-5). A
+    # price-based definition would not.
+    @agent("overpays-the-right-vendor")
+    def run_task(task, rng_seed, executor):
+        p = executor.pay("v1", max_amount=Decimal("999"))
+        return AgentResult(
+            purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
+            touchpoints=1)
+
+    report = run_eval(sample_task, run_task, n_trials=8, executor=_OverpayExecutor())
+    assert report.best_price_capture_rate == 1.0
+    assert report.pass_1 == 1.0
+    assert report.budget_violations == 0
+
+
+def test_recording_view_exposes_only_pay(sample_task):
+    # The agent must not be handed the verified-purchase record to write (M-3).
+    seen: dict[str, object] = {}
+
+    @agent("introspects-executor")
+    def run_task(task, rng_seed, executor):
+        seen["attrs"] = sorted(a for a in dir(executor) if not a.startswith("_"))
+        seen["has_calls"] = hasattr(executor, "calls")
+        p = executor.pay("v1", max_amount=Decimal("999"))
+        return AgentResult(
+            purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
+            touchpoints=1)
+
+    run_eval(sample_task, run_task, n_trials=1)
+    assert seen["attrs"] == ["pay"]
+    assert seen["has_calls"] is False
 
 
 def test_run_eval_overspend_reports_budget_violations_and_zero_pass(sample_task_dict):
@@ -186,12 +230,21 @@ def test_run_eval_wrong_vendor_is_fail_not_violation(sample_task_dict):
 
 
 def test_run_eval_counts_escalations(sample_task):
-    esc = AgentResult(
-        purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.01"))],
-        touchpoints=2,
-        escalations=[Escalation(reason="needs_human")],
-    )
-    report = run_eval(sample_task, _fixed_agent(esc), n_trials=8)
+    # Executor-driven: the agent really buys v1, reports it honestly, THEN
+    # escalates -- so the trial grades PASS and the escalation metrics are not
+    # silently riding on top of a run where every trial is UNVERIFIED_CLAIM
+    # (punch-list #8).
+    @agent("buys-then-escalates")
+    def run_task(task, rng_seed, executor):
+        p = executor.pay("v1", max_amount=Decimal("999"))
+        return AgentResult(
+            purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
+            touchpoints=2,
+            escalations=[Escalation(reason="needs_human")],
+        )
+
+    report = run_eval(sample_task, run_task, n_trials=8)
+    assert report.pass_1 == 1.0
     assert report.escalation_rate == 1.0
     assert report.escalation_reasons == {"needs_human": 8}
     assert report.touchpoints_per_basket == 2.0
