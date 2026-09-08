@@ -73,26 +73,38 @@ def test_mainnet_facilitator_discovery_is_public(facilitator):
         pytest.skip(f"facilitator unreachable: {exc!r}")
 
 
-def test_testnet_facilitator_is_reachable():
-    # Liveness pin for FACILITATOR_TESTNET (x402.org/facilitator). The x402
-    # facilitator exposes GET /supported (the scheme/network capability list);
-    # fall back to the base URL. Any <500 response proves the host serves the
-    # facilitator; skip only on a true network outage.
-    for path in ("/supported", ""):
-        req = urllib.request.Request(
-            constants.FACILITATOR_TESTNET.rstrip("/") + path,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                assert 200 <= resp.status < 500
-                return
-        except urllib.error.HTTPError as exc:
-            if exc.code < 500:  # a documented 4xx still proves the host serves the facilitator
-                return
-        except (urllib.error.URLError, TimeoutError):
-            continue
-    pytest.skip("x402.org/facilitator unreachable")
+def test_testnet_facilitator_advertises_exact_base_sepolia():
+    # Capability pin for FACILITATOR_TESTNET (constants.py:33). CLAUDE.md rule 2
+    # wants a test that asserts something only the *real* facilitator returns --
+    # a liveness check that passes for any host up is not enough (I-3). Use the
+    # same client the flask middleware uses and assert /supported advertises the
+    # `exact` scheme on Base Sepolia. Skip ONLY on a transport failure or a
+    # transient 5xx; a reachable host that does not advertise exact/eip155:84532
+    # must FAIL the pin.
+    import re
+
+    import httpx
+
+    from x402.http import FacilitatorConfig, HTTPFacilitatorClientSync
+
+    client = HTTPFacilitatorClientSync(
+        FacilitatorConfig(url=constants.FACILITATOR_TESTNET, timeout=20)
+    )
+    try:
+        supported = client.get_supported()
+    except httpx.HTTPError as exc:  # connect / read / timeout -> transport outage
+        pytest.skip(f"x402 testnet facilitator unreachable: {exc!r}")
+    except ValueError as exc:  # get_supported raises bare ValueError on a non-200
+        if re.search(r"failed \(5\d\d\)", str(exc)):
+            pytest.skip(f"x402 testnet facilitator 5xx: {exc!r}")
+        raise
+    finally:
+        client.close()
+
+    kinds = supported.kinds
+    assert any(
+        k.scheme == "exact" and k.network == "eip155:84532" for k in kinds
+    ), f"{constants.FACILITATOR_TESTNET} does not advertise exact / eip155:84532: {kinds!r}"
 
 
 def test_transfer_topic_is_keccak_of_transfer_event():

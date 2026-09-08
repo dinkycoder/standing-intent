@@ -63,13 +63,17 @@ def test_verifies_known_sepolia_settlement():
 
 
 def test_wrong_expected_amount_does_not_match():
+    # Off by a single USDC atomic unit (0.001001 vs the real 0.001): the
+    # wrong-but-plausible case. A 1000x-off expectation (0.999) would be caught
+    # by almost any check; an exact-atomic comparison is what this pins.
     v = _verify_or_skip(
         MAINNET_TX,
-        _expected(MAINNET_PAYER, MAINNET_PAYTO, Decimal("0.999"), MAINNET_USDC),
+        _expected(MAINNET_PAYER, MAINNET_PAYTO, Decimal("0.001001"), MAINNET_USDC),
         CHAIN_ID_BASE_MAINNET,
     )
     assert v.matches_expected is False
     assert "amount" in v.mismatch
+    assert v.amount_atomic == 1000   # the real tx value is still decoded exactly
 
 
 def test_wrong_expected_payto_does_not_match():
@@ -87,11 +91,16 @@ def test_missing_tx_raises_not_confirmed(monkeypatch):
     from payments.errors import SettlementNotConfirmed
 
     # Real "reachable RPC, tx genuinely absent -> SettlementNotConfirmed" test,
-    # but fast: one endpoint, no retry back-off. Without this it walks all 3
-    # mainnet RPCs with 5x2s sleeps each (~30s).
+    # but fast: a short RPC list, no retry back-off. Without this it walks all 3
+    # mainnet RPCs with 5x2s sleeps each (~30s). publicnode first (punch-list #4:
+    # it does not need the _connect User-Agent spoof the way mainnet.base.org
+    # did in Week 1); base.drpc.org as a fallback so a publicnode 403 from some
+    # networks still exercises the reachable-but-absent path instead of skipping.
     monkeypatch.setattr("payments.settlement._RETRY_SLEEP", 0)
-    monkeypatch.setattr("payments.settlement.rpc_urls",
-                        lambda _cid: ("https://mainnet.base.org",))
+    monkeypatch.setattr(
+        "payments.settlement.rpc_urls",
+        lambda _cid: ("https://base-rpc.publicnode.com", "https://base.drpc.org"),
+    )
     try:
         with pytest.raises(SettlementNotConfirmed):
             verify_settlement(

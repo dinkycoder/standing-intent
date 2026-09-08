@@ -12,6 +12,7 @@ import json
 
 import requests
 
+from payments.constants import USDC_BASE_SEPOLIA
 from payments.testing.fixtures import x402_seller  # noqa: F401
 
 
@@ -24,3 +25,7 @@ def test_seller_serves_a_402(x402_seller):
         terms = json.loads(base64.b64decode(header))
         assert terms["accepts"][0]["scheme"] == "exact"
         assert terms["accepts"][0]["network"].endswith("84532")
+        # Pin the asset too: the paid routes rely on the x402 middleware default
+        # being USDC Base Sepolia. This assertion catches a middleware default
+        # change that scheme/network alone would miss (punch-list #10).
+        assert terms["accepts"][0]["asset"] == USDC_BASE_SEPOLIA
