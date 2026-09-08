@@ -1,2 +1,6 @@
 pytest==8.3.4
 PyYAML==6.0.2
+# Sync facilitator client used by the x402[flask] middleware in
+# payments/testing/seller.py. Not pulled by x402[flask]; only the test seller
+# needs it (the buyer path in payments/client.py runs on the requests extra).
+httpx==0.28.1
