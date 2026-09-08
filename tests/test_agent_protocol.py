@@ -36,3 +36,9 @@ def test_require_agent_id_rejects_empty_id():
         @agent("")
         def run_task(task, rng_seed):
             return AgentResult(touchpoints=1)
+
+
+def test_agent_run_task_is_three_arg():
+    import inspect
+    from evals.agents.stub import run_task
+    assert list(inspect.signature(run_task).parameters)[:3] == ["task", "rng_seed", "executor"]

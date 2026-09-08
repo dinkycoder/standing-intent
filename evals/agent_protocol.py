@@ -1,6 +1,7 @@
 """The one interface every agent under test implements.
 
-An agent is a callable ``run_task(task: TaskSpec, rng_seed: int) -> AgentResult``.
+An agent is a callable
+``run_task(task: TaskSpec, rng_seed: int, executor: PaymentExecutor) -> AgentResult``.
 It carries a stable string id, attached by the ``@agent("...")`` decorator, which
 the harness records in every EvalReport.
 """
@@ -9,9 +10,10 @@ from __future__ import annotations
 
 from typing import Callable
 
+from evals.executor import PaymentExecutor
 from evals.models import AgentResult, TaskSpec
 
-AgentFn = Callable[[TaskSpec, int], AgentResult]
+AgentFn = Callable[[TaskSpec, int, PaymentExecutor], AgentResult]
 
 
 def agent(agent_id: str) -> Callable[[AgentFn], AgentFn]:

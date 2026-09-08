@@ -13,10 +13,29 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from evals.agent_protocol import AgentFn, require_agent_id
+from evals.environments import resolve_executor
+from evals.executor import ExecutedPurchase
 from evals.grading import GradeOutcome, grade
 from evals.models import AgentResult, EvalReport, TaskSpec, Vendor
 
 _PASS_K_VALUES = (4, 8)
+
+
+class _RecordingExecutor:
+    """Proxy around a PaymentExecutor that records every purchase it returns.
+
+    run_eval wraps a fresh one per trial. Task 11 reconciles ``.calls`` against
+    the agent's self-reported purchases; until then the record is unused.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.calls: list[ExecutedPurchase] = []
+
+    def pay(self, target, *, max_amount):
+        p = self._inner.pay(target, max_amount=max_amount)
+        self.calls.append(p)
+        return p
 
 
 def pass_k(successes: int, n_trials: int, k: int) -> float:
@@ -53,22 +72,25 @@ def run_eval(
     agent_fn: AgentFn,
     n_trials: int = 8,
     base_seed: int = 0,
+    executor=None,
 ) -> EvalReport:
     if n_trials < 1:
         raise ValueError(f"n_trials must be >= 1, got {n_trials}")
 
     agent_id = require_agent_id(agent_fn)
+    base_executor = executor if executor is not None else resolve_executor(task, wallet=None)
 
     results: list[AgentResult] = []
     outcomes: list[GradeOutcome] = []
     for i in range(n_trials):
-        result = agent_fn(task, base_seed + i)
+        proxy = _RecordingExecutor(base_executor)
+        result = agent_fn(task, base_seed + i, proxy)
         if not isinstance(result, AgentResult):
             raise TypeError(
                 f"agent {agent_id!r} returned {type(result)!r}, expected AgentResult"
             )
         results.append(result)
-        outcomes.append(grade(result, task))
+        outcomes.append(grade(result, task))  # still 2-arg; Task 11 changes this
 
     successes = sum(1 for o in outcomes if o is GradeOutcome.PASS)
     budget_violations = sum(1 for o in outcomes if o is GradeOutcome.BUDGET_VIOLATION)
