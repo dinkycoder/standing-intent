@@ -54,6 +54,14 @@ def test_usdc_balance_reads_known_address():
     assert Decimal(0) < b < Decimal(1000)
 
 
+def test_usdc_balance_bad_address_raises_value_error_before_any_rpc():
+    # M-8: a malformed address must fail fast with a clear ValueError, not be
+    # reported as "no RPC reachable" after walking every endpoint.
+    from payments.wallet import _usdc_balance_of
+    with pytest.raises(ValueError):
+        _usdc_balance_of("not-an-address", CHAIN_ID_BASE_MAINNET)
+
+
 def test_cdp_wallet_is_a_seam():
     with pytest.raises(NotImplementedError):
         CdpWallet()

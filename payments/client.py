@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import copy
 import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -58,6 +59,15 @@ def _chain_id_of(network: str) -> int | None:
     return _KNOWN_BASE.get(network)
 
 
+def _int_or(raw: object, default: int) -> int:
+    """int(raw) for vendor-controlled input, falling back on non-numeric strings
+    (ValueError) and on dict/list/None values (TypeError)."""
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        return default
+
+
 def _offer_from_entry(entry: dict) -> Offer:
     network = str(entry.get("network", ""))
     chain_id = _chain_id_of(network)
@@ -75,6 +85,11 @@ def _offer_from_entry(entry: dict) -> Offer:
     reason = None
     if not amount_ok:
         reason = f"unparseable amount: {raw_amount!r}"
+    elif amount < 0:
+        # An untrusted vendor offer; mirror evals/models.py UsdcAmount(ge=0). A
+        # negative price is `satisfiable` and sorts as the cheapest otherwise
+        # (I-7).
+        reason = f"negative amount: {raw_amount!r}"
     elif entry.get("scheme") != "exact":
         reason = f"scheme {entry.get('scheme')!r} not supported"
     elif chain_id not in USDC_BY_CHAIN:
@@ -91,7 +106,7 @@ def _offer_from_entry(entry: dict) -> Offer:
         asset=asset,
         amount=amount,
         pay_to=str(entry.get("payTo", "")),
-        max_timeout_seconds=int(entry.get("maxTimeoutSeconds", 0)),
+        max_timeout_seconds=_int_or(entry.get("maxTimeoutSeconds", 0), 0),
         transfer_method=transfer_method,
         satisfiable=reason is None,
         unsatisfiable_reason=reason,
@@ -99,13 +114,15 @@ def _offer_from_entry(entry: dict) -> Offer:
 
 
 def parse_terms(raw_terms: dict, url: str) -> PaymentQuote:
-    version = int(raw_terms.get("x402Version", 1))
+    version = _int_or(raw_terms.get("x402Version", 1), 1)
     entries = raw_terms.get("accepts") or []
     offers = tuple(_offer_from_entry(e) for e in entries)
     satisfiable = [o for o in offers if o.satisfiable]
     best = min(satisfiable, key=lambda o: o.amount) if satisfiable else None
+    # Deep-copy so the frozen PaymentQuote is not a live view into a dict the
+    # caller (or a later mutation of the decoded header) still holds (punch #2).
     return PaymentQuote(url=url, x402_version=version, offers=offers,
-                        best_satisfiable=best, raw_terms=raw_terms)
+                        best_satisfiable=best, raw_terms=copy.deepcopy(raw_terms))
 
 
 def _decode_header(value: str) -> dict:

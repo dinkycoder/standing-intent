@@ -25,7 +25,8 @@ class Wallet(Protocol):
 
 def _usdc_balance_of(address: str, network: int) -> Decimal:
     to = Web3.to_checksum_address(USDC_BY_CHAIN[network])   # KeyError here = a real bug, not connectivity
-    data = _BALANCE_OF_SELECTOR + "0" * 24 + address.lower().removeprefix("0x")
+    owner = Web3.to_checksum_address(address)   # bad address = ValueError now, not "no RPC reachable" after every endpoint
+    data = _BALANCE_OF_SELECTOR + "0" * 24 + owner.lower().removeprefix("0x")
     last = None
     for url in rpc_urls(network):
         try:

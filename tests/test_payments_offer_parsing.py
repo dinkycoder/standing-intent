@@ -87,6 +87,70 @@ def test_malformed_amount_degrades_offer_not_call():
     assert q.best_satisfiable is None
 
 
+def test_negative_amount_is_unsatisfiable_and_not_cheapest():
+    # I-7: an untrusted vendor offer with a negative price parses fine
+    # (Decimal("-5000") / 1e6) so nothing else rejects it, and min(..., key=amount)
+    # would pick it over every legitimate offer.
+    raw = {
+        "x402Version": 2,
+        "accepts": [
+            {**_good_entry(), "amount": "-5000"},
+            _good_entry(amount="2000"),
+        ],
+    }
+    q = parse_terms(raw, "u")
+    assert q.offers[0].satisfiable is False
+    assert "negative" in q.offers[0].unsatisfiable_reason
+    assert q.best_satisfiable is q.offers[1]
+
+
+def test_negative_amount_only_offer_leaves_no_satisfiable():
+    raw = {"x402Version": 2, "accepts": [{**_good_entry(), "amount": "-1"}]}
+    q = parse_terms(raw, "u")
+    assert q.best_satisfiable is None
+    assert q.offers[0].satisfiable is False and "negative" in q.offers[0].unsatisfiable_reason
+
+
+@pytest.mark.parametrize("bad", ["v2", {"nested": 1}, [1, 2], None])
+def test_non_numeric_x402_version_falls_back_to_1(bad):
+    raw = {"x402Version": bad, "accepts": [_good_entry(amount="2000")]}
+    assert parse_terms(raw, "u").x402_version == 1
+
+
+@pytest.mark.parametrize("bad", ["soon", {"nested": 1}, [1], None])
+def test_non_numeric_max_timeout_falls_back_to_0(bad):
+    raw = {"x402Version": 2, "accepts": [{**_good_entry(amount="2000"), "maxTimeoutSeconds": bad}]}
+    q = parse_terms(raw, "u")
+    assert q.offers[0].max_timeout_seconds == 0
+    assert q.offers[0].satisfiable is True   # a junk timeout must not sink an otherwise-good offer
+
+
+@pytest.mark.parametrize("entry_amount", [None, "MISSING"])
+def test_missing_or_none_amount_degrades_offer(entry_amount):
+    entry = _good_entry()
+    if entry_amount == "MISSING":
+        entry.pop("amount")
+    else:
+        entry["amount"] = None
+    q = parse_terms({"x402Version": 2, "accepts": [entry]}, "u")
+    bad = q.offers[0]
+    # A dropped "amount" key defaults to "0" (satisfiable, free); an explicit
+    # null is unparseable and degrades the offer.
+    if entry_amount is None:
+        assert bad.satisfiable is False and "amount" in bad.unsatisfiable_reason
+    else:
+        assert bad.amount == Decimal("0")
+
+
+def test_raw_terms_is_deep_copied_not_a_live_view():
+    raw = {"x402Version": 2, "accepts": [_good_entry(amount="2000")]}
+    q = parse_terms(raw, "u")
+    raw["accepts"][0]["amount"] = "999999999"
+    raw["x402Version"] = 99
+    assert q.raw_terms["accepts"][0]["amount"] == "2000"
+    assert q.raw_terms["x402Version"] == 2
+
+
 def test_malformed_amount_does_not_poison_other_offers():
     raw = {
         "x402Version": 2,
