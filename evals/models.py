@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
@@ -49,6 +49,7 @@ class Vendor(_Model):
     category: str
     price_usdc: UsdcAmount
     in_allowlist: bool = True
+    url: Optional[str] = None
 
 
 class Mandate(_Model):
@@ -71,6 +72,7 @@ class Grading(_Model):
 
 class Environment(_Model):
     vendors: list[Vendor]
+    kind: Literal["synthetic", "real_x402"] = "synthetic"
 
 
 class TaskSpec(_Model):
@@ -125,3 +127,5 @@ class EvalReport(_Model):
     cost_per_completed_tx_usdc: Optional[UsdcAmount]
     escalation_rate: float
     escalation_reasons: dict[str, int]
+    unverified_claims: int = 0
+    settled_tx_hashes: list[str] = Field(default_factory=list)

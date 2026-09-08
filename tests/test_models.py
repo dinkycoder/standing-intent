@@ -82,3 +82,29 @@ def test_agent_result_roundtrips_through_json():
     )
     reloaded = AgentResult.model_validate_json(result.model_dump_json())
     assert reloaded == result
+
+
+def test_environment_kind_defaults_to_synthetic(sample_task_dict):
+    task = TaskSpec.model_validate(sample_task_dict)
+    assert task.environment.kind == "synthetic"
+
+
+def test_environment_real_x402_and_vendor_url(sample_task_dict):
+    sample_task_dict["environment"]["kind"] = "real_x402"
+    sample_task_dict["environment"]["vendors"][0]["url"] = "http://127.0.0.1:9/weather-data"
+    task = TaskSpec.model_validate(sample_task_dict)
+    assert task.environment.kind == "real_x402"
+    assert task.environment.vendors[0].url == "http://127.0.0.1:9/weather-data"
+    assert task.environment.vendors[1].url is None
+
+
+def test_environment_rejects_unknown_kind(sample_task_dict):
+    sample_task_dict["environment"]["kind"] = "bogus"
+    with pytest.raises(ValidationError):
+        TaskSpec.model_validate(sample_task_dict)
+
+
+def test_eval_report_has_reconciliation_fields():
+    from evals.models import EvalReport
+    fields = EvalReport.model_fields
+    assert "unverified_claims" in fields and "settled_tx_hashes" in fields
