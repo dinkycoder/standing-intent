@@ -34,6 +34,11 @@ def main(
 
     for path in sorted(Path(task_dir).glob("*.json")):
         task = TaskSpec.from_json_file(path)
+        # REPORTING ONLY, no wallet: real_x402 specs pay a live endpoint and
+        # resolve_executor(task, wallet=None) raises for them. The stub scores
+        # pass^1 = 0 regardless of environment, so skipping them loses nothing.
+        if task.environment.kind != "synthetic":
+            continue
         report = run_eval(task, stub_run_task, n_trials=n_trials)
         out_path = out_dir / f"{report.task_id}_{report.date_utc}.json"
         out_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")

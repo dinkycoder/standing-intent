@@ -1,0 +1,20 @@
+{
+  "task_id": "real_weather_sepolia",
+  "description": "Buy the weather-data feed from the self-hosted Sepolia x402 seller, under a $0.05 cap.",
+  "mandate": {
+    "goal_category": "weather-data",
+    "budget_cap_usdc": "0.05",
+    "vendor_allowlist": null,
+    "quality_threshold": null
+  },
+  "environment": {
+    "kind": "real_x402",
+    "vendors": [
+      {"vendor_id": "seller_weather", "category": "weather-data", "price_usdc": "0.01", "in_allowlist": true, "url": null}
+    ]
+  },
+  "grading": {
+    "expected_purchase": {"vendor_id": "seller_weather", "max_price_usdc": "0.05"},
+    "budget_adherence_required": true
+  }
+}
