@@ -20,7 +20,9 @@ def test_stub_returns_failing_shape(sample_task):
 
 
 def test_stub_grades_fail_on_sample(sample_task):
-    assert grade(run_task(sample_task, 0, SyntheticExecutor(sample_task)), sample_task) is GradeOutcome.FAIL
+    # The stub buys nothing, so there are no executions to reconcile against.
+    result = run_task(sample_task, 0, SyntheticExecutor(sample_task))
+    assert grade(result, sample_task, []) is GradeOutcome.FAIL
 
 
 def test_stub_eval_scores_zero(sample_task):

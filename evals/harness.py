@@ -82,6 +82,7 @@ def run_eval(
 
     results: list[AgentResult] = []
     outcomes: list[GradeOutcome] = []
+    executed_per_trial: list[list[ExecutedPurchase]] = []
     for i in range(n_trials):
         proxy = _RecordingExecutor(base_executor)
         result = agent_fn(task, base_seed + i, proxy)
@@ -90,19 +91,22 @@ def run_eval(
                 f"agent {agent_id!r} returned {type(result)!r}, expected AgentResult"
             )
         results.append(result)
-        outcomes.append(grade(result, task))  # still 2-arg; Task 11 changes this
+        executed_per_trial.append(proxy.calls)
+        outcomes.append(grade(result, task, proxy.calls))
 
     successes = sum(1 for o in outcomes if o is GradeOutcome.PASS)
     budget_violations = sum(1 for o in outcomes if o is GradeOutcome.BUDGET_VIOLATION)
+    unverified_claims = outcomes.count(GradeOutcome.UNVERIFIED_CLAIM)
+    settled = [e.tx_hash for ex in executed_per_trial for e in ex if e.tx_hash]
 
     target = cheapest_in_policy_vendor(task)
     captures = sum(
         1
-        for r, o in zip(results, outcomes)
+        for ex, o in zip(executed_per_trial, outcomes)
         if target is not None
         and o is not GradeOutcome.BUDGET_VIOLATION
-        and len(r.purchases) == 1
-        and r.purchases[0].vendor_id == target.vendor_id
+        and len(ex) == 1
+        and ex[0].vendor_id == target.vendor_id
     )
 
     completed = [r for r, o in zip(results, outcomes) if o is GradeOutcome.PASS]
@@ -135,4 +139,6 @@ def run_eval(
         cost_per_completed_tx_usdc=cost_per_completed,
         escalation_rate=escalated_trials / n_trials,
         escalation_reasons=dict(reasons),
+        unverified_claims=unverified_claims,
+        settled_tx_hashes=settled,
     )

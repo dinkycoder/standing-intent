@@ -96,23 +96,42 @@ def test_run_eval_all_pass(sample_task):
     assert report.escalation_rate == 0.0
     assert report.escalation_reasons == {}
     assert report.outcomes == ["pass"] * 8
+    assert report.unverified_claims == 0
+    assert report.settled_tx_hashes == []
 
 
-def test_best_price_capture_counts_target_vendor_bought_above_catalog(sample_task):
-    # sample_task target = v1 (catalog 0.01, cap 0.05). Executor-driven: pay v1
-    # via the executor, then report the purchase at 0.03 (above catalog, still
-    # <= max_price 0.05) -> PASS (v1 == expected), not a budget violation ->
-    # still "captured" the cheapest in-policy vendor.
+def test_run_eval_counts_unverified_claims(sample_task):
+    # The agent claims a purchase but never drives the executor -> nothing to
+    # reconcile against -> every trial grades UNVERIFIED_CLAIM, none PASS.
+    @agent("claims-without-paying")
+    def run_task(task, rng_seed, executor):
+        return AgentResult(
+            purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.01"))],
+            touchpoints=1)
+
+    report = run_eval(sample_task, run_task, n_trials=8)
+    assert report.unverified_claims == 8
+    assert report.pass_1 == 0.0
+    assert report.outcomes == ["unverified_claim"] * 8
+
+
+def test_best_price_capture_counts_target_vendor(sample_task):
+    # sample_task target = v1 (catalog 0.01, cap 0.05). The agent pays v1 through
+    # the executor and reports the EXECUTED purchase honestly. A synthetic
+    # executor can't overpay, so the Week-2 "above catalog" nuance is now
+    # enforced structurally -- grading rule 4's amount_paid <= max_price_usdc
+    # still bounds the price.
     @agent("fake")
     def run_task(task, rng_seed, executor):
-        executor.pay("v1", max_amount=Decimal("999"))
+        p = executor.pay("v1", max_amount=Decimal("999"))
         return AgentResult(
-            purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.03"))],
+            purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
             touchpoints=1)
 
     report = run_eval(sample_task, run_task, n_trials=8)
     assert report.best_price_capture_rate == 1.0
     assert report.pass_1 == 1.0
+    assert report.unverified_claims == 0
 
 
 def test_run_eval_overspend_reports_budget_violations_and_zero_pass(sample_task_dict):
@@ -158,17 +177,24 @@ def test_run_eval_discriminates_cost_and_escalation_aggregation(sample_task):
     # Flaky agent: even seeds PASS with cost 0.02 and two escalations {a, b};
     # odd seeds FAIL (wrong vendor) with cost 0.10 and NO escalations.
     # n_trials=8, base_seed=0 -> 4 PASS (even), 4 FAIL (odd).
+    # Re-price v2 under the cap so an odd-seed buy is in-budget-but-wrong-vendor
+    # (FAIL), not a BUDGET_VIOLATION. Agents drive the executor so their reported
+    # purchases reconcile against the verified record (no UNVERIFIED_CLAIM).
+    sample_task.environment.vendors[1].price_usdc = Decimal("0.04")
+
     @agent("cost-flaky")
     def run_task(task, rng_seed, executor):
         if rng_seed % 2 == 0:
+            p = executor.pay("v1", max_amount=Decimal("999"))
             return AgentResult(
-                purchases=[Purchase(vendor_id="v1", price_usdc=Decimal("0.01"))],
+                purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
                 touchpoints=1,
                 cost_usdc=Decimal("0.02"),
                 escalations=[Escalation(reason="a"), Escalation(reason="b")],
             )
+        p = executor.pay("v2", max_amount=Decimal("999"))
         return AgentResult(
-            purchases=[Purchase(vendor_id="v2", price_usdc=Decimal("0.02"))],
+            purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
             touchpoints=1,
             cost_usdc=Decimal("0.10"),
             escalations=[],
