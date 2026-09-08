@@ -7,7 +7,18 @@ The user signs **one** capped, revocable authorization. The agent then discovers
 evaluates offers, and completes purchases with **zero further human contact** until the budget
 is exhausted or an out-of-policy condition forces escalation.
 
-**Current phase: Week 2 — environment + eval harness.** The Week 1 gate closed GREEN (`docs/archive/probe/findings.md`). The eval harness lives in `evals/`; `docs/superpowers/specs/2026-09-02-eval-harness-design.md` is the design and `docs/superpowers/plans/2026-09-07-week2-eval-harness.md` the build plan.
+**Current phase: Week 4 — the Base Spend Permission.** Weeks 1–3 are complete and on `main`:
+
+- **Week 1** — the endpoint-availability gate closed GREEN (`docs/archive/probe/findings.md`).
+- **Week 2** — the eval harness lives in `evals/`: task specs, terminal-state grading, `pass^k`
+  metrics, CI gating. Design in `docs/superpowers/specs/2026-09-02-eval-harness-design.md`.
+- **Week 3** — the x402 payments spine lives in `payments/`: offer inspection, payment
+  construction, on-chain settlement verification, a local test seller. The harness now grades
+  agents against **verified on-chain settlements**, not their self-reports. One real Base
+  mainnet settlement is recorded in `docs/week3-mainnet-gate.md`.
+
+Week 4 adds the user-signed Spend Permission — one capped, revocable authorization the agent
+spends against with no further human contact.
 
 ---
 
@@ -41,38 +52,35 @@ result goes in this README whichever way it lands.
 CLAUDE.md                    constraints governing all work here — read first
 docs/
   PMF_AND_BUILD_PLAN.md      research report and 13-week plan
-  WEEK1_GATE.md              the current gate: pass/fail criteria
-probe/                       disposable week-1 scripts, deleted after the gate
-  findings.md                the surviving artifact — the gate's verdict
+  WEEK1_GATE.md              the week-1 gate: pass/fail criteria (closed GREEN)
+  week3-mainnet-gate.md      the first real mainnet settlement, recorded
+  archive/probe/             disposable week-1 scripts + findings.md (the gate verdict)
+  superpowers/               design specs and build plans, per phase
+evals/                       eval harness — task specs, terminal-state grading, metrics, CI gate
+payments/                    x402 offer inspection, payment, settlement verification, test seller
 .claude/agents/              subagent definitions (payments, planner, evals, tests)
 ```
 
 ## Getting started
 
-Right now there is only one thing to do: run the week-1 gate.
-
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r probe\requirements.txt
-Copy-Item probe\.env.example probe\.env   # then fill it in
+git config --global core.longpaths true        # Windows only — see note below
+python -m pip install -r requirements.txt -r requirements-dev.txt
+Copy-Item .env.example .env                     # then fill it in
+python -m pytest                                # unit + eval suite; integration/manual deselected
 ```
 
-Read [`docs/WEEK1_GATE.md`](docs/WEEK1_GATE.md) before running anything. Do the first probe by
-hand with `curl.exe` rather than generating code for it.
+The `integration` and `manual` test tiers hit live testnet/mainnet and need a funded
+`X402_WALLET_KEY`; run them explicitly with `-m integration` / `-m manual`.
 
-### Installing the payments deps on Windows
+### Windows: long paths
 
 `requirements.txt` installs the `x402` SDK from a pinned git URL. Its nested Solidity
-submodules blow past `MAX_PATH`, so a fresh Windows clone must enable long paths first or the
-`pip install` fails partway through:
-
-```powershell
-git config --global core.longpaths true
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-Linux CI is unaffected.
+submodules blow past `MAX_PATH`, so a fresh Windows clone must `git config --global
+core.longpaths true` before `pip install` or the install fails partway through. Linux CI is
+unaffected.
 
 ## Principles
 
