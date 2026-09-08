@@ -13,16 +13,19 @@ from __future__ import annotations
 
 import contextlib
 import socket
+import threading
 
 import pytest
 
-from payments.testing.seller import run_seller
+from payments import constants
+from payments.testing.seller import _silence_werkzeug, build_seller_app
 
 # Overridden when X402_WALLET_KEY is set -- see x402_seller below. Checksum-cased
 # so it round-trips through eth_account / the x402 middleware unchanged.
 _TEST_PAY_TO = "0x000000000000000000000000000000000000bEEF"
 
 _READY_TIMEOUT_SECONDS = 5.0
+_FACILITATOR_PROBE_TIMEOUT_SECONDS = 5.0
 
 
 def _free_port() -> int:
@@ -34,8 +37,8 @@ def _free_port() -> int:
 def _wait_until_listening(port: int, timeout: float = _READY_TIMEOUT_SECONDS) -> None:
     """Block until 127.0.0.1:`port` accepts a TCP connection, or fail.
 
-    A threaded Werkzeug dev server is not guaranteed to be up after a fixed
-    sleep; poll instead so the fixture is deterministic.
+    A threaded Werkzeug server is not guaranteed to be up the instant the thread
+    starts; poll instead so the fixture is deterministic.
     """
     import time
 
@@ -49,10 +52,40 @@ def _wait_until_listening(port: int, timeout: float = _READY_TIMEOUT_SECONDS) ->
     raise RuntimeError(f"x402 test seller did not come up on port {port} within {timeout}s")
 
 
+def _require_testnet_facilitator() -> None:
+    """Skip (do not fail) when the x402 testnet facilitator handshake would fail.
+
+    The middleware pulls the facilitator's `/supported` capability list on the
+    first protected request to build the 402; if that call does not return 200
+    the gated route 500s. Probe with the *same* client the middleware uses (a
+    bare `urllib` GET is 403'd by x402.org on User-Agent) so the fixture yields
+    only when a paid request could actually be validated. A CI smoke test must
+    not go red on a third-party outage, and Task 7/13's integration tests --
+    which could not settle anyway -- share this fixture.
+    """
+    from x402.http import FacilitatorConfig, HTTPFacilitatorClientSync
+
+    client = HTTPFacilitatorClientSync(
+        FacilitatorConfig(
+            url=constants.FACILITATOR_TESTNET, timeout=_FACILITATOR_PROBE_TIMEOUT_SECONDS
+        )
+    )
+    try:
+        client.get_supported()
+    except Exception as exc:  # noqa: BLE001 -- any failure here is a liveness skip, not a bug
+        pytest.skip(f"x402 testnet facilitator handshake failed: {exc}")
+    finally:
+        client.close()
+
+
 @pytest.fixture
 def x402_seller():
-    """Start the x402 test seller in a daemon thread; yield its base URL."""
+    """Start the x402 test seller on a controllable server; yield its base URL."""
     import os
+
+    from werkzeug.serving import make_server
+
+    _require_testnet_facilitator()
 
     pay_to = _TEST_PAY_TO
     key = os.environ.get("X402_WALLET_KEY")
@@ -61,11 +94,18 @@ def x402_seller():
 
         pay_to = Account.from_key(key).address
 
+    _silence_werkzeug()
     port = _free_port()
-    run_seller(pay_to, port)
+    app = build_seller_app(pay_to)
+    server = make_server("127.0.0.1", port, app, threaded=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
     _wait_until_listening(port)
-    yield f"http://127.0.0.1:{port}"
-    # daemon thread dies with the process; no explicit stop needed
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
 
 
 def wire_real_x402_task(task, base_url):

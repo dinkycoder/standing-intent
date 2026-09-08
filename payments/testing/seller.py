@@ -112,12 +112,11 @@ def build_seller_app(pay_to: str, *, network: str = DEFAULT_NETWORK) -> Flask:
     return app
 
 
-def run_seller(pay_to: str, port: int, *, network: str = DEFAULT_NETWORK) -> threading.Thread:
-    """Start `build_seller_app` on 127.0.0.1:`port` in a daemon thread.
+def _silence_werkzeug() -> None:
+    """Quiet the dev-server request log and Flask's startup banner.
 
-    Werkzeug request logging and Flask's startup banner are silenced so the test
-    suite output stays clean. The thread dies with the process; callers poll for
-    readiness rather than sleeping.
+    The banner is a bare ``print`` (not a log record), so the logger level alone
+    does not remove it.
     """
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
@@ -125,6 +124,15 @@ def run_seller(pay_to: str, port: int, *, network: str = DEFAULT_NETWORK) -> thr
 
     flask.cli.show_server_banner = lambda *a, **k: None  # type: ignore[assignment]
 
+
+def run_seller(pay_to: str, port: int, *, network: str = DEFAULT_NETWORK) -> threading.Thread:
+    """Start `build_seller_app` on 127.0.0.1:`port` in a daemon thread via app.run().
+
+    Convenience for callers that want a raw background thread and will let it die
+    with the process. Tests that need deterministic teardown should use the
+    `x402_seller` fixture, which drives a shutdown-able `werkzeug.serving` server.
+    """
+    _silence_werkzeug()
     app = build_seller_app(pay_to, network=network)
     thread = threading.Thread(
         target=lambda: app.run(
