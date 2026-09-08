@@ -1,2 +1,13 @@
 pytest==8.3.4
 PyYAML==6.0.2
+ruff==0.16.6
+
+# payments/testing/ deps -- the self-hosted x402 test seller
+# (payments/testing/seller.py) and its fixtures only. Not used by the buyer path
+# in payments/client.py (that runs on the x402[requests] extra), so these are
+# dev-only, not runtime.
+#   - the x402[flask] extra pulls the Flask middleware for the test seller
+#   - httpx is the sync facilitator client the flask middleware needs; x402[flask]
+#     does not pull it
+x402[flask] @ git+https://github.com/x402-foundation/x402@e398a9e#subdirectory=python/x402
+httpx==0.28.1

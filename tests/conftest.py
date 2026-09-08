@@ -45,6 +45,21 @@ def sample_task(sample_task_file):
 
 
 @pytest.fixture
+def make_executed():
+    from decimal import Decimal
+
+    from evals.executor import ExecutedPurchase
+
+    def _make(items=None):
+        return [
+            ExecutedPurchase(vendor_id=vid, url=None, amount_paid=Decimal(str(amt)),
+                             pay_to=None, tx_hash=None, verified=True, resource=None)
+            for vid, amt in (items or [])
+        ]
+    return _make
+
+
+@pytest.fixture
 def make_result():
     from decimal import Decimal
 

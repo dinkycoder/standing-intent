@@ -15,7 +15,7 @@ from evals.models import AgentResult, Escalation
 
 
 @agent("stub-v0")
-def run_task(task, rng_seed) -> AgentResult:
+def run_task(task, rng_seed, executor) -> AgentResult:
     return AgentResult(
         purchases=[],
         touchpoints=2,  # 1 mandate signature + 1 escalation

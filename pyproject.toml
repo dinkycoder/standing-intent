@@ -1,4 +1,27 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra"
+addopts = "-ra -m 'not integration and not manual'"
+markers = [
+    "integration: needs testnet funds or a live seller; not run in CI",
+    "manual: run once by hand; records a result",
+]
+filterwarnings = [
+    # web3 7.16.0 imports websockets.legacy transitively; surfaced here because
+    # this is the first module to `import web3`. Not our code path.
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+]
+
+[tool.ruff.lint]
+# Ruff's own default set (pyflakes + a slice of pycodestyle), pinned explicitly
+# so `ruff check .` stays stable across ruff releases. This retires the
+# unused-import / redefinition class the punch list kept catching by hand.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# A pytest fixture is imported for its registration side effect and then re-used
+# as a test-function parameter; ruff reads the parameter as a redefinition
+# (F811) of the "unused" import. Standard pytest idiom, not a real bug.
+"tests/**" = ["F811"]
+# The sys.path shim must run before the first-party imports it exists to enable.
+"scripts/run_stub_evals.py" = ["E402"]

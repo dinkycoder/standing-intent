@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from evals.agents.stub import run_task
 from evals.agent_protocol import require_agent_id
+from evals.executor import SyntheticExecutor
 from evals.grading import GradeOutcome, grade
 from evals.harness import run_eval
 
@@ -11,7 +12,7 @@ def test_stub_has_id():
 
 
 def test_stub_returns_failing_shape(sample_task):
-    result = run_task(sample_task, 0)
+    result = run_task(sample_task, 0, SyntheticExecutor(sample_task))
     assert result.purchases == []
     assert [e.reason for e in result.escalations] == ["not_implemented"]
     assert result.touchpoints == 2
@@ -19,7 +20,9 @@ def test_stub_returns_failing_shape(sample_task):
 
 
 def test_stub_grades_fail_on_sample(sample_task):
-    assert grade(run_task(sample_task, 0), sample_task) is GradeOutcome.FAIL
+    # The stub buys nothing, so there are no executions to reconcile against.
+    result = run_task(sample_task, 0, SyntheticExecutor(sample_task))
+    assert grade(result, sample_task, []) is GradeOutcome.FAIL
 
 
 def test_stub_eval_scores_zero(sample_task):
