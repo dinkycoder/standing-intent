@@ -50,6 +50,22 @@ DEFAULT_RPC: dict[int, tuple[str, ...]] = {
 
 X402_SDK_REF = "git+https://github.com/x402-foundation/x402@e398a9e#subdirectory=python/x402"
 
+# Base Spend Permissions -- Coinbase's primary repo, README.md "Deployments" section:
+# https://github.com/coinbase/spend-permissions (pinned at commit e0004e6, 2026-09-12)
+# Same address on every deployed chain (Base, Base Sepolia, and others) -- a
+# deterministic (CREATE2-style) deployment, per the README's address table.
+# On-chain (tests/test_payments_constants.py): SPEND_PERMISSION_TYPEHASH() ==
+# keccak256(SPEND_PERMISSION_TYPE_STRING), recomputed independently, not hardcoded.
+SPEND_PERMISSION_MANAGER = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad"
+
+# The exact EIP-712 struct signature src/SpendPermissionManager.sol keccak256's to
+# get SPEND_PERMISSION_TYPEHASH, quoted verbatim from the pinned commit above.
+SPEND_PERMISSION_TYPE_STRING = (
+    "SpendPermission(address account,address spender,address token,"
+    "uint160 allowance,uint48 period,uint48 start,uint48 end,uint256 salt,"
+    "bytes extraData)"
+)
+
 
 def rpc_urls(chain_id: int) -> tuple[str, ...]:
     """RPC endpoints for a chain, env override first."""
