@@ -11,6 +11,7 @@ capability is built before a failing eval task exists for it (`CLAUDE.md` rule 3
 | `agent_protocol.py` | The `run_task(task, rng_seed) -> AgentResult` contract and the `@agent("id")` decorator. |
 | `grading.py` | Pure terminal-state grading -> `PASS` / `FAIL` / `BUDGET_VIOLATION`. |
 | `harness.py` | `run_eval(task, agent_fn, n_trials)` -> `EvalReport`. Computes `pass^1`, `pass^k` (k=4,8), and the day-one counters. |
+| `stats.py` | Wilson-interval confidence bounds for `pass^1`, `pass^k`, and `best_price_capture_rate` -- see `docs/math/binomial-intervals.md`. |
 | `agents/stub.py` | The Week-2 agent under test. Always fails. |
 | `tasks/*.json` | Synthetic procurement tasks: a mandate + an in-memory vendor catalog + grading criteria. No network, no chain. |
 | `results/` | Run artifacts (git-ignored). |
@@ -39,6 +40,16 @@ python -m pytest -v
 
 `tests/test_grading.py` and `tests/test_harness.py` are the gate: they prove the
 harness does not lie to itself.
+
+## Confidence intervals (Week 4 side-branch)
+
+`pass_1_ci`, `pass_k_ci`, and `best_price_capture_rate_ci` on `EvalReport` are
+Wilson score intervals over the same `n_trials` used for the point estimates
+(default 8). A point estimate alone at n=8 is the same species of overclaim
+CLAUDE.md's "no unverified constants" / "tests must catch wrong-but-plausible
+output" rules exist to prevent elsewhere -- `pass^1 = 0.75` at n=8 has a 95%
+interval running from roughly 0.41 to 0.93. Report the interval, not just the
+rate. See `docs/math/binomial-intervals.md` for the derivation.
 
 ## Known limitations
 

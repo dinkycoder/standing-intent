@@ -17,6 +17,7 @@ from evals.environments import resolve_executor
 from evals.executor import ExecutedPurchase
 from evals.grading import GradeOutcome, grade
 from evals.models import AgentResult, EvalReport, TaskSpec, Vendor
+from evals.stats import pass_k_interval, wilson_interval
 
 _PASS_K_VALUES = (4, 8)
 
@@ -148,14 +149,21 @@ def run_eval(
         n_trials=n_trials,
         outcomes=[o.value for o in outcomes],
         pass_1=successes / n_trials,
+        pass_1_ci=wilson_interval(successes, n_trials),
         pass_k={
             k: pass_k(successes, n_trials, k)
+            for k in _PASS_K_VALUES
+            if k <= n_trials
+        },
+        pass_k_ci={
+            k: pass_k_interval(successes, n_trials, k)
             for k in _PASS_K_VALUES
             if k <= n_trials
         },
         touchpoints_per_basket=sum(r.touchpoints for r in results) / n_trials,
         budget_violations=budget_violations,
         best_price_capture_rate=captures / n_trials,
+        best_price_capture_rate_ci=wilson_interval(captures, n_trials),
         cost_per_completed_tx_usdc=cost_per_completed,
         escalation_rate=escalated_trials / n_trials,
         escalation_reasons=dict(reasons),
