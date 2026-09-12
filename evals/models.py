@@ -120,10 +120,13 @@ class EvalReport(_Model):
     n_trials: int
     outcomes: list[str]
     pass_1: float
+    pass_1_ci: tuple[float, float]
     pass_k: dict[int, float]
+    pass_k_ci: dict[int, tuple[float, float]]
     touchpoints_per_basket: float
     budget_violations: int
     best_price_capture_rate: float
+    best_price_capture_rate_ci: tuple[float, float]
     cost_per_completed_tx_usdc: Optional[UsdcAmount]
     escalation_rate: float
     escalation_reasons: dict[str, int]

@@ -49,13 +49,18 @@ def main(
 
 
 def _print_table(reports: list[EvalReport]) -> None:
-    header = f"{'task_id':<34} {'pass^1':>7} {'pass^4':>7} {'pass^8':>7} {'tp/bskt':>8} {'budget_viol':>12} {'esc_rate':>9}"
+    header = (
+        f"{'task_id':<34} {'pass^1 (95% CI)':>20} {'pass^4':>7} {'pass^8':>7} "
+        f"{'tp/bskt':>8} {'budget_viol':>12} {'esc_rate':>9}"
+    )
     print(header)
     print("-" * len(header))
     for r in reports:
+        lo, hi = r.pass_1_ci
+        pass_1_col = f"{r.pass_1:.2f} [{lo:.2f}, {hi:.2f}]"
         print(
             f"{r.task_id:<34} "
-            f"{r.pass_1:>7.2f} "
+            f"{pass_1_col:>20} "
             f"{r.pass_k.get(4, 0.0):>7.2f} "
             f"{r.pass_k.get(8, 0.0):>7.2f} "
             f"{r.touchpoints_per_basket:>8.2f} "
