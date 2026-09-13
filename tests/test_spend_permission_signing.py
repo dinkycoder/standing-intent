@@ -14,6 +14,7 @@ from payments.spend_permission import (
     _domain_separator,
     _replay_safe_hash,
     _spend_permission_hash,
+    _translate_custom_error,
 )
 
 _ACCOUNT = "0x000000000000000000000000000000000000dEaD"
@@ -86,3 +87,41 @@ def test_replay_safe_hash_differs_per_account():
     a = _replay_safe_hash(inner, CHAIN_ID_BASE_SEPOLIA, _ACCOUNT)
     b = _replay_safe_hash(inner, CHAIN_ID_BASE_SEPOLIA, _SPENDER)
     assert a != b
+
+
+def test_translate_custom_error_recognizes_unauthorized_selector():
+    # Zero-argument error: UnauthorizedSpendPermission()
+    # Payload = selector (10 hex chars including 0x) because there are no arguments
+    from payments.errors import SpendPermissionUnauthorized
+    from web3.exceptions import ContractCustomError
+
+    selector = "0x" + keccak(text="UnauthorizedSpendPermission()").hex()[:8]
+    # Create exception and set args as a tuple (mimics how web3.py structures it)
+    fake_exc = ContractCustomError("custom error")
+    fake_exc.args = (selector,)
+    result = _translate_custom_error(fake_exc)
+    assert isinstance(result, SpendPermissionUnauthorized)
+
+
+def test_translate_custom_error_recognizes_exceeded_with_arguments():
+    # Two-argument error: ExceededSpendPermission(uint256 value, uint256 allowance)
+    # Payload = selector (10 hex chars) + 64 bytes of ABI-encoded arguments (128 hex chars)
+    # Encoding: (30000, 50000) = 0x000..[30000] + 0x000..[50000]
+    from decimal import Decimal
+    from payments.errors import SpendCapExceeded
+    from web3.exceptions import ContractCustomError
+
+    selector = "0x" + keccak(text="ExceededSpendPermission(uint256,uint256)").hex()[:8]
+    # ABI encode two uint256 arguments: value=30000, allowance=50000
+    value_encoded = (30000).to_bytes(32, "big")
+    allowance_encoded = (50000).to_bytes(32, "big")
+    full_payload = selector + value_encoded.hex() + allowance_encoded.hex()
+
+    # Create exception and set args as a tuple (mimics how web3.py structures it)
+    fake_exc = ContractCustomError("custom error")
+    fake_exc.args = (full_payload,)
+    result = _translate_custom_error(fake_exc)
+    assert isinstance(result, SpendCapExceeded)
+    # Value/allowance are set to -1 in _translate_custom_error fallback since we can't decode the payload
+    assert result.value == Decimal("-1")
+    assert result.allowance == Decimal("-1")
