@@ -34,10 +34,8 @@
 ```python
 # tests/test_payments_wallet.py -- append
 
-def test_sign_digest_recovers_to_wallet_address():
-    from eth_account import Account
-    from eth_account._utils.signing import to_eth_v  # not used; recovery below is the real check
-    wallet = LocalWallet(_TEST_KEY)
+def test_sign_digest_recovers_to_wallet_address(throwaway_key):
+    wallet = LocalWallet(throwaway_key)
     digest = b"\x11" * 32
     sig = wallet.sign_digest(digest)
     assert len(sig) == 65
@@ -46,9 +44,9 @@ def test_sign_digest_recovers_to_wallet_address():
     assert recovered.lower() == wallet.address.lower()
 
 
-def test_send_transaction_returns_a_tx_hash(monkeypatch):
+def test_send_transaction_returns_a_tx_hash(monkeypatch, throwaway_key):
     from web3 import Web3
-    wallet = LocalWallet(_TEST_KEY)
+    wallet = LocalWallet(throwaway_key)
     w3 = Web3(Web3.HTTPProvider("https://base-sepolia-rpc.publicnode.com", request_kwargs={"timeout": 20}))
     sent = {}
 
@@ -66,7 +64,7 @@ def test_send_transaction_returns_a_tx_hash(monkeypatch):
     assert "raw" in sent
 ```
 
-(`_TEST_KEY` already exists in this test file as the throwaway key used by the other `LocalWallet` tests — reuse it, don't add a second one.)
+Reuse the existing `throwaway_key` pytest fixture already defined in this file (`Account.create().key.hex()`, generated fresh per test) — don't add a second key mechanism. `Account` is already imported at module level in this file.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -421,21 +419,22 @@ read directly rather than assumed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from decimal import Decimal
+from dataclasses import dataclass
 
 from eth_utils import keccak
-from web3 import Web3
 
-from payments.chain import get_web3, wait_for_receipt
 from payments.constants import (
     SMART_WALLET_DOMAIN_NAME,
     SMART_WALLET_DOMAIN_VERSION,
     SPEND_PERMISSION_MANAGER,
     SPEND_PERMISSION_TYPE_STRING,
 )
-from payments.errors import SigningError, SpendCapExceeded, SpendPermissionUnauthorized
-from payments.wallet import Wallet
+
+# This module grows across Tasks 4-7; each task's own "-- append" snippet
+# below adds ONLY the imports its new code actually uses (Decimal, Web3,
+# get_web3/wait_for_receipt, Wallet, the error types) rather than
+# front-loading them here. Add each import line at the task that first uses
+# it, or ruff's unused-import check fails on this task's diff alone.
 
 # uint48 max -- the contract's own "no expiry" sentinel (SpendPermissionManager
 # .sol's `end` field is uint48; there is no separate "no expiry" flag, so the
@@ -582,8 +581,13 @@ Expected: FAIL — `ImportError: cannot import name 'provision_smart_wallet_acco
 - [ ] **Step 3: Implement**
 
 ```python
-# payments/spend_permission.py -- append
+# payments/spend_permission.py -- append these imports to the existing block
+from web3 import Web3
+
+from payments.chain import get_web3, wait_for_receipt
 from payments.constants import SMART_WALLET_FACTORY_V1_1
+from payments.errors import SigningError
+from payments.wallet import Wallet
 
 _FACTORY_ABI = [
     {"type": "function", "name": "createAccount", "stateMutability": "payable",
@@ -708,7 +712,9 @@ Expected: FAIL — `ImportError: cannot import name 'sign_spend_permission'`
 - [ ] **Step 3: Implement**
 
 ```python
-# payments/spend_permission.py -- append
+# payments/spend_permission.py -- append this import to the existing block
+from payments.errors import SpendPermissionUnauthorized
+
 _PERMISSION_COMPONENTS = [
     {"name": "account", "type": "address"},
     {"name": "spender", "type": "address"},
@@ -852,8 +858,12 @@ Expected: FAIL — `ImportError: cannot import name 'spend'`
 - [ ] **Step 3: Implement**
 
 ```python
-# payments/spend_permission.py -- append
+# payments/spend_permission.py -- append this import to the existing block
+from decimal import Decimal
+
 import web3.exceptions as _web3_exceptions
+
+from payments.errors import SpendCapExceeded
 
 _ZERO_VALUE_SELECTOR = "0x" + keccak(text="ZeroValue()").hex()[:8]
 _UNAUTHORIZED_SELECTOR = "0x" + keccak(text="UnauthorizedSpendPermission()").hex()[:8]
@@ -952,18 +962,67 @@ git commit -m "Add spend() and revoke_spend_permission() with typed errors"
 
 **Files:**
 - Modify: `payments/testing/fixtures.py`
-- Modify: `tests/test_payments_spend_permission.py` (PR #8 — remove nothing, the three tests were already written against this exact API; only the fixture needs to exist)
+- Modify: `tests/test_payments_spend_permission.py` (bring in from PR #8's branch, then reconcile — see Step 1)
 
 **Interfaces:**
 - Consumes: `provision_smart_wallet_account` (Task 5), `sign_spend_permission`/`register_spend_permission` (Task 6), `spend`/`revoke_spend_permission` (Task 7).
 - Produces: pytest fixture `spend_permission_account` yielding a `SmartWalletAccount`, funded with test USDC.
 
-- [ ] **Step 1: The tests already exist and are already failing (PR #8) — run them to confirm the current failure mode**
+**Preflight finding, ruled on before this task was dispatched (see ledger):**
+PR #8's branch (`week4-spend-permission-cap-spec`, commit `d089f33`) isn't
+merged and this implementation branch doesn't have the file yet — Step 1
+below brings it in. Its `signed_permission` fixture also calls the API with a
+shape from *before* the design spec fixed the final signatures: no `network`
+argument anywhere, `token="USDC"` (symbolic, not an address), `allowance` as
+a whole-USDC `Decimal`, and the field name `period_seconds` rather than
+`period`. This is not a conflict to resolve in this module's favor by
+guesswork — the file's own docstring says so directly: *"Week 4 is free to
+reshape names as long as these three terminal-state assertions hold once
+it's built."* Ruling: update the fixture's construction calls to the Tasks
+4–7 signatures (which implement the actual binding spec,
+`docs/superpowers/specs/2026-09-13-spend-permission-account-design.md`);
+leave the three `test_*` function bodies' assertions untouched — only what
+they call changes, not what they check.
+
+- [ ] **Step 1: Bring in PR #8's file and reconcile it against the finalized API**
+
+```bash
+git show origin/week4-spend-permission-cap-spec:tests/test_payments_spend_permission.py > tests/test_payments_spend_permission.py
+```
+
+Then edit `signed_permission` in that file to:
+
+```python
+# tests/test_payments_spend_permission.py -- replace the signed_permission fixture
+@pytest.fixture
+def signed_permission(spend_permission_account):
+    from payments.constants import CHAIN_ID_BASE_SEPOLIA, USDC_BASE_SEPOLIA
+    account = spend_permission_account
+    spender = LocalWallet.from_env()
+    permission = SpendPermission(
+        account=account.address,
+        spender=spender.address,
+        token=USDC_BASE_SEPOLIA,
+        allowance=50_000,       # atomic USDC: Decimal("0.05") * 10**6
+        period=86400,
+    )
+    signature = sign_spend_permission(permission, account, CHAIN_ID_BASE_SEPOLIA)
+    register_spend_permission(permission, signature, spender, CHAIN_ID_BASE_SEPOLIA)
+    return permission, spender
+```
+
+And each `spend(...)`/`revoke_spend_permission(...)` call in the three test
+bodies gains a trailing `, CHAIN_ID_BASE_SEPOLIA` argument (e.g.
+`spend(permission, _CAP_USDC - Decimal("0.02"), spender, CHAIN_ID_BASE_SEPOLIA)`).
+`_CAP_USDC` (a `Decimal`, used for the *comparison* values in the test bodies)
+stays as-is — only the `SpendPermission.allowance` field itself is atomic.
+
+- [ ] **Step 2: Run the tests to confirm the failure mode is now import-clean but fixture-incomplete**
 
 Run: `python -m pytest tests/test_payments_spend_permission.py -v -m integration`
-Expected: FAIL at collection (`ImportError`), same as when PR #8 was opened.
+Expected: FAIL — `fixture 'spend_permission_account' not found` (no more `ImportError`; the reconciliation in Step 1 is what made the file importable at all).
 
-- [ ] **Step 2: Implement the fixture**
+- [ ] **Step 3: Implement the fixture**
 
 ```python
 # payments/testing/fixtures.py -- append
@@ -996,20 +1055,25 @@ def spend_permission_account() -> SmartWalletAccount:
     return account
 ```
 
-- [ ] **Step 3: Run PR #8's tests**
+- [ ] **Step 4: Run the reconciled tests**
 
 Run: `python -m pytest tests/test_payments_spend_permission.py -v -m integration`
 Expected: PASS on all three (`test_spend_within_cap_settles_on_chain`,
-`test_spend_above_cap_is_rejected_on_chain`, `test_revoked_permission_rejects_further_spend`) — the exact three assertions the design spec named as the crux demo.
+`test_spend_above_cap_is_rejected_on_chain`, `test_revoked_permission_rejects_further_spend`) — the exact three assertions the design spec named as the crux demo. The bodies are unchanged from PR #8; only the fixture and each call's trailing `network` argument were touched (Step 1).
 
-- [ ] **Step 4: Un-draft PR #8**
+- [ ] **Step 5: Close out PR #8**
 
-The PR is currently marked "DO NOT MERGE" / draft. Once green, mark it ready for review (`gh pr ready 8`) and update its description to remove the red-by-design framing.
+The PR is currently marked "DO NOT MERGE" / draft, on its own branch
+(`week4-spend-permission-cap-spec`), separate from this implementation
+branch. Once this task's tests pass here, that branch's one commit is
+superseded by this task's reconciled version — close PR #8 referencing this
+plan/branch rather than merging it as-is (`gh pr close 8 --comment "..."`),
+so the repo doesn't end up with two divergent copies of this test file.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add payments/testing/fixtures.py
+git add payments/testing/fixtures.py tests/test_payments_spend_permission.py
 git commit -m "Wire spend_permission_account: PR #8's failing spec now passes"
 ```
 
