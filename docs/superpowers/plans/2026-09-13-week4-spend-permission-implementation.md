@@ -586,7 +586,7 @@ from web3 import Web3
 
 from payments.chain import get_web3, wait_for_receipt
 from payments.constants import SMART_WALLET_FACTORY_V1_1
-from payments.errors import SigningError
+from payments.errors import PaymentError
 from payments.wallet import Wallet
 
 _FACTORY_ABI = [
@@ -597,6 +597,17 @@ _FACTORY_ABI = [
      "inputs": [{"name": "owners", "type": "bytes[]"}, {"name": "nonce", "type": "uint256"}],
      "outputs": [{"name": "", "type": "address"}]},
 ]
+
+
+class OnChainTransactionReverted(PaymentError):
+    """A broadcast transaction's receipt came back with status != 1 --
+    generic on-chain revert (bad initcode, out-of-gas, an unhandled
+    contract-level check), not a signing problem. SigningError is the
+    wrong class for this: it means "the wallet failed to produce a
+    signature," a different failure mode entirely -- flagged in Task 5's
+    review. Used across this module wherever a revert isn't one of the
+    two specific SpendPermissionManager errors (SpendCapExceeded,
+    SpendPermissionUnauthorized) that get their own typed exception."""
 
 
 @dataclass(frozen=True)
@@ -628,13 +639,23 @@ def provision_smart_wallet_account(owner: Wallet, network: int, nonce: int = 0) 
 
     address = factory.functions.getAddress(owners, nonce).call()
     if w3.eth.get_code(address) == b"":
+        # gasPrice must be explicit: build_transaction on an EIP-1559 chain
+        # (Base Sepolia/mainnet both are) auto-fills maxFeePerGas/
+        # maxPriorityFeePerGas when gasPrice is absent, and
+        # Wallet.send_transaction's setdefault("gasPrice", ...) then adds a
+        # gasPrice on top of those -- eth_account.sign_transaction rejects
+        # that combination outright. Passing gasPrice here makes
+        # build_transaction emit a legacy-type dict with no EIP-1559 fields,
+        # so send_transaction's setdefault becomes a no-op. Confirmed by
+        # reproducing the conflict live against the pinned web3/eth-account
+        # versions during Task 5's review -- this is not a hypothetical.
         tx = factory.functions.createAccount(owners, nonce).build_transaction({
-            "from": owner.address, "gas": 700_000,
+            "from": owner.address, "gas": 700_000, "gasPrice": w3.eth.gas_price,
         })
         tx_hash = owner.send_transaction(w3, tx)
         receipt = wait_for_receipt(w3, tx_hash)
         if receipt["status"] != 1:
-            raise SigningError(f"createAccount reverted: {tx_hash}")
+            raise OnChainTransactionReverted(f"createAccount reverted: {tx_hash}")
 
     return SmartWalletAccount(address=address, owner=owner)
 ```
@@ -785,9 +806,12 @@ def register_spend_permission(
 ) -> str:
     w3 = get_web3(network)
     manager = _manager_contract(w3)
+    # gasPrice explicit -- see Task 5's build_transaction comment: without it,
+    # build_transaction's EIP-1559 auto-fill conflicts with send_transaction's
+    # own gasPrice default and eth_account.sign_transaction rejects the tx.
     tx = manager.functions.approveWithSignature(
         _permission_tuple(permission), signature
-    ).build_transaction({"from": spender.address, "gas": 300_000})
+    ).build_transaction({"from": spender.address, "gas": 300_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
     receipt = wait_for_receipt(w3, tx_hash)
     if receipt["status"] != 1:
@@ -904,11 +928,12 @@ def spend(permission: SpendPermission, value: Decimal, spender: Wallet, network:
             raise SpendCapExceeded(value=value, allowance=_atomic_to_decimal(permission.allowance)) from exc
         raise translated from exc
 
-    tx = fn.build_transaction({"from": spender.address, "gas": 200_000})
+    # gasPrice explicit -- see Task 5's build_transaction comment.
+    tx = fn.build_transaction({"from": spender.address, "gas": 200_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
     receipt = wait_for_receipt(w3, tx_hash)
     if receipt["status"] != 1:
-        raise SigningError(f"spend reverted after passing dry-run: {tx_hash}")
+        raise OnChainTransactionReverted(f"spend reverted after passing dry-run: {tx_hash}")
     return tx_hash
 
 
@@ -924,13 +949,14 @@ def revoke_spend_permission(permission: SpendPermission, spender: Wallet, networ
     sends transactions."""
     w3 = get_web3(network)
     manager = _manager_contract(w3)
+    # gasPrice explicit -- see Task 5's build_transaction comment.
     tx = manager.functions.revokeAsSpender(_permission_tuple(permission)).build_transaction({
-        "from": spender.address, "gas": 150_000,
+        "from": spender.address, "gas": 150_000, "gasPrice": w3.eth.gas_price,
     })
     tx_hash = spender.send_transaction(w3, tx)
     receipt = wait_for_receipt(w3, tx_hash)
     if receipt["status"] != 1:
-        raise SigningError(f"revokeAsSpender reverted: {tx_hash}")
+        raise OnChainTransactionReverted(f"revokeAsSpender reverted: {tx_hash}")
     return tx_hash
 ```
 
@@ -1169,8 +1195,11 @@ def test_deploy_spend_router_to_base_sepolia():
     w3 = get_web3(CHAIN_ID_BASE_SEPOLIA)
     deployer = LocalWallet.from_env()  # X402_WALLET_KEY, or a dedicated deploy key
     contract = w3.eth.contract(abi=abi, bytecode=bytecode)
+    # gasPrice explicit -- see payments/spend_permission.py Task 5's
+    # build_transaction comment: without it, this conflicts with
+    # send_transaction's own gasPrice default on an EIP-1559 chain.
     tx = contract.constructor(Web3.to_checksum_address(SPEND_PERMISSION_MANAGER)).build_transaction({
-        "from": deployer.address, "gas": 2_000_000,
+        "from": deployer.address, "gas": 2_000_000, "gasPrice": w3.eth.gas_price,
     })
     tx_hash = deployer.send_transaction(w3, tx)
     receipt = wait_for_receipt(w3, tx_hash, retries=10)
@@ -1341,8 +1370,7 @@ from web3 import Web3
 
 from payments.chain import get_web3, wait_for_receipt
 from payments.constants import SPEND_ROUTER
-from payments.errors import SigningError
-from payments.spend_permission import _permission_tuple, SpendPermission
+from payments.spend_permission import OnChainTransactionReverted, _permission_tuple, SpendPermission
 from payments.wallet import Wallet
 
 _PERMISSION_COMPONENTS = [  # duplicated from spend_permission.py's _PERMISSION_COMPONENTS
@@ -1387,13 +1415,14 @@ def spend_and_route_with_signature(
     w3 = get_web3(network)
     router = _router_contract(w3)
     atomic_value = int(value * Decimal(10) ** 6)
+    # gasPrice explicit -- see Task 5's build_transaction comment.
     tx = router.functions.spendAndRouteWithSignature(
         _permission_tuple(permission), atomic_value, signature
-    ).build_transaction({"from": spender.address, "gas": 300_000})
+    ).build_transaction({"from": spender.address, "gas": 300_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
     receipt = wait_for_receipt(w3, tx_hash)
     if receipt["status"] != 1:
-        raise SigningError(f"spendAndRouteWithSignature reverted: {tx_hash}")
+        raise OnChainTransactionReverted(f"spendAndRouteWithSignature reverted: {tx_hash}")
     return tx_hash
 
 
@@ -1405,13 +1434,14 @@ def spend_and_route(permission: SpendPermission, value: Decimal, spender: Wallet
     w3 = get_web3(network)
     router = _router_contract(w3)
     atomic_value = int(value * Decimal(10) ** 6)
+    # gasPrice explicit -- see Task 5's build_transaction comment.
     tx = router.functions.spendAndRoute(
         _permission_tuple(permission), atomic_value
-    ).build_transaction({"from": spender.address, "gas": 250_000})
+    ).build_transaction({"from": spender.address, "gas": 250_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
     receipt = wait_for_receipt(w3, tx_hash)
     if receipt["status"] != 1:
-        raise SigningError(f"spendAndRoute reverted: {tx_hash}")
+        raise OnChainTransactionReverted(f"spendAndRoute reverted: {tx_hash}")
     return tx_hash
 ```
 
