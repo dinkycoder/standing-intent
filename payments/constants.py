@@ -66,6 +66,21 @@ SPEND_PERMISSION_TYPE_STRING = (
     "bytes extraData)"
 )
 
+# Coinbase Smart Wallet factory (v1.1) -- Coinbase's primary repo, README.md
+# "Deployments" section: https://github.com/coinbase/smart-wallet (pinned at
+# commit a4e83fd, 2026-09-13). "Deployed via Safe Singleton Factory, which today
+# will give the same address across 248 chains" per the README -- unlike
+# SPEND_PERMISSION_MANAGER this is quoted from the README only; the on-chain pin
+# below (tests/test_smart_wallet_constants.py) is what actually earns the trust.
+SMART_WALLET_FACTORY_V1_1 = "0xBA5ED110eFDBa3D005bfC882d75358ACBbB85842"
+
+# The account implementation's own EIP-712 domain name/version, quoted verbatim
+# from src/CoinbaseSmartWallet.sol's _domainNameAndVersion() override at the same
+# pinned commit. Used by the on-chain pin to recompute domainSeparator()
+# independently rather than hardcoding its hash.
+SMART_WALLET_DOMAIN_NAME = "Coinbase Smart Wallet"
+SMART_WALLET_DOMAIN_VERSION = "1"
+
 
 def rpc_urls(chain_id: int) -> tuple[str, ...]:
     """RPC endpoints for a chain, env override first."""
