@@ -14,13 +14,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from eth_utils import keccak
+from web3 import Web3
 
+from payments.chain import get_web3, wait_for_receipt
 from payments.constants import (
     SMART_WALLET_DOMAIN_NAME,
     SMART_WALLET_DOMAIN_VERSION,
+    SMART_WALLET_FACTORY_V1_1,
     SPEND_PERMISSION_MANAGER,
     SPEND_PERMISSION_TYPE_STRING,
 )
+from payments.errors import SigningError
+from payments.wallet import Wallet
 
 # This module grows across Tasks 4-7; each task's own "-- append" snippet
 # below adds ONLY the imports its new code actually uses (Decimal, Web3,
@@ -100,3 +105,53 @@ def _replay_safe_hash(inner_hash: bytes, chain_id: int, account_address: str) ->
         SMART_WALLET_DOMAIN_NAME, SMART_WALLET_DOMAIN_VERSION, chain_id, account_address
     )
     return keccak(b"\x19\x01" + domain + message_hash)
+
+
+_FACTORY_ABI = [
+    {"type": "function", "name": "createAccount", "stateMutability": "payable",
+     "inputs": [{"name": "owners", "type": "bytes[]"}, {"name": "nonce", "type": "uint256"}],
+     "outputs": [{"name": "account", "type": "address"}]},
+    {"type": "function", "name": "getAddress", "stateMutability": "view",
+     "inputs": [{"name": "owners", "type": "bytes[]"}, {"name": "nonce", "type": "uint256"}],
+     "outputs": [{"name": "", "type": "address"}]},
+]
+
+
+@dataclass(frozen=True)
+class SmartWalletAccount:
+    address: str
+    owner: Wallet
+
+
+def _owner_bytes(address: str) -> bytes:
+    """abi.encode(address) as the factory expects for an address-typed
+    owner -- a single left-padded 32-byte word (src/CoinbaseSmartWalletFactory
+    .sol: "Each item should be an ABI encoded address or 64 byte public
+    key")."""
+    return _address_bytes(address)
+
+
+def provision_smart_wallet_account(owner: Wallet, network: int, nonce: int = 0) -> SmartWalletAccount:
+    """Deploy (or reuse, if already deployed) a Coinbase Smart Wallet owned by
+    `owner`, with SpendPermissionManager baked into the initial owner set --
+    see the design spec for why this avoids needing addOwnerAddress/a
+    bundler. Idempotent: same (owner, nonce) always resolves to the same
+    counterfactual address; a second call is a cheap no-op deploy attempt
+    against an address that already has code."""
+    w3 = get_web3(network)
+    factory = w3.eth.contract(
+        address=Web3.to_checksum_address(SMART_WALLET_FACTORY_V1_1), abi=_FACTORY_ABI
+    )
+    owners = [_owner_bytes(owner.address), _owner_bytes(SPEND_PERMISSION_MANAGER)]
+
+    address = factory.functions.getAddress(owners, nonce).call()
+    if w3.eth.get_code(address) == b"":
+        tx = factory.functions.createAccount(owners, nonce).build_transaction({
+            "from": owner.address, "gas": 700_000,
+        })
+        tx_hash = owner.send_transaction(w3, tx)
+        receipt = wait_for_receipt(w3, tx_hash)
+        if receipt["status"] != 1:
+            raise SigningError(f"createAccount reverted: {tx_hash}")
+
+    return SmartWalletAccount(address=address, owner=owner)
