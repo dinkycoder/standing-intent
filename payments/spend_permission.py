@@ -12,9 +12,11 @@ read directly rather than assumed.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from eth_utils import keccak
 from web3 import Web3
+import web3.exceptions as _web3_exceptions
 
 from payments.chain import get_web3, wait_for_receipt
 from payments.constants import (
@@ -24,7 +26,7 @@ from payments.constants import (
     SPEND_PERMISSION_MANAGER,
     SPEND_PERMISSION_TYPE_STRING,
 )
-from payments.errors import PaymentError, SpendPermissionUnauthorized
+from payments.errors import PaymentError, SpendCapExceeded, SpendPermissionUnauthorized
 from payments.wallet import Wallet
 
 # This module grows across Tasks 4-7; each task's own "-- append" snippet
@@ -202,6 +204,9 @@ _MANAGER_ABI = [
     {"type": "function", "name": "revoke", "stateMutability": "nonpayable",
      "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
      "outputs": []},
+    {"type": "function", "name": "revokeAsSpender", "stateMutability": "nonpayable",
+     "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
+     "outputs": []},
     {"type": "function", "name": "isApproved", "stateMutability": "view",
      "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
      "outputs": [{"name": "", "type": "bool"}]},
@@ -258,4 +263,75 @@ def register_spend_permission(
     receipt = wait_for_receipt(w3, tx_hash)
     if receipt["status"] != 1:
         raise SpendPermissionUnauthorized(f"approveWithSignature reverted: {tx_hash}")
+    return tx_hash
+
+
+_ZERO_VALUE_SELECTOR = "0x" + keccak(text="ZeroValue()").hex()[:8]
+_UNAUTHORIZED_SELECTOR = "0x" + keccak(text="UnauthorizedSpendPermission()").hex()[:8]
+_EXCEEDED_SELECTOR = "0x" + keccak(text="ExceededSpendPermission(uint256,uint256)").hex()[:8]
+
+
+def _atomic_to_decimal(atomic: int) -> Decimal:
+    return Decimal(atomic) / Decimal(10) ** 6
+
+
+def _translate_custom_error(exc: "_web3_exceptions.ContractCustomError") -> Exception:
+    # web3 7.16.0 does not auto-resolve a selector to a name even when the ABI
+    # declares the error (confirmed live during planning) -- match the raw
+    # selector against independently-recomputed keccak values instead of
+    # trusting exc's own message.
+    selector = exc.args[0] if exc.args else None
+    if selector == _UNAUTHORIZED_SELECTOR:
+        return SpendPermissionUnauthorized()
+    if selector == _EXCEEDED_SELECTOR:
+        # ExceededSpendPermission(value, allowance) args aren't recoverable
+        # from the bare selector match above (no abi-decoding of the revert
+        # payload here) -- report what WE tried to spend against the
+        # permission's own allowance, which is what the caller needs anyway.
+        return SpendCapExceeded(value=Decimal("-1"), allowance=Decimal("-1"))
+    return exc
+
+
+def spend(permission: SpendPermission, value: Decimal, spender: Wallet, network: int) -> str:
+    w3 = get_web3(network)
+    manager = _manager_contract(w3)
+    atomic_value = int(value * Decimal(10) ** 6)
+    fn = manager.functions.spend(_permission_tuple(permission), atomic_value)
+    try:
+        fn.call({"from": spender.address})  # dry-run: cheap, decodes the revert before paying gas
+    except _web3_exceptions.ContractCustomError as exc:
+        translated = _translate_custom_error(exc)
+        if isinstance(translated, SpendCapExceeded):
+            raise SpendCapExceeded(value=value, allowance=_atomic_to_decimal(permission.allowance)) from exc
+        raise translated from exc
+
+    # gasPrice explicit -- see Task 5's build_transaction comment.
+    tx = fn.build_transaction({"from": spender.address, "gas": 200_000, "gasPrice": w3.eth.gas_price})
+    tx_hash = spender.send_transaction(w3, tx)
+    receipt = wait_for_receipt(w3, tx_hash)
+    if receipt["status"] != 1:
+        raise OnChainTransactionReverted(f"spend reverted after passing dry-run: {tx_hash}")
+    return tx_hash
+
+
+def revoke_spend_permission(permission: SpendPermission, revoker: Wallet, network: int) -> str:
+    """revokeAsSpender() -- requireSender(spendPermission.spender)
+    (src/SpendPermissionManager.sol:406-411, confirmed by direct source
+    read). NOT revoke() (requireSender(spendPermission.account)): the
+    account is a Smart Wallet, so only a call whose msg.sender is the
+    wallet's own address satisfies that -- an EOA owner calling revoke()
+    directly still reverts InvalidSender, since msg.sender would be the
+    owner's address, not the wallet's. revokeAsSpender is the only one of
+    the two callable directly by an EOA the way this module signs and
+    sends transactions."""
+    w3 = get_web3(network)
+    manager = _manager_contract(w3)
+    # gasPrice explicit -- see Task 5's build_transaction comment.
+    tx = manager.functions.revokeAsSpender(_permission_tuple(permission)).build_transaction({
+        "from": revoker.address, "gas": 150_000, "gasPrice": w3.eth.gas_price,
+    })
+    tx_hash = revoker.send_transaction(w3, tx)
+    receipt = wait_for_receipt(w3, tx_hash)
+    if receipt["status"] != 1:
+        raise OnChainTransactionReverted(f"revokeAsSpender reverted: {tx_hash}")
     return tx_hash

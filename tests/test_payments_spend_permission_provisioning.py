@@ -1,14 +1,18 @@
 import os
+from decimal import Decimal
 
 import pytest
 
 from payments.constants import CHAIN_ID_BASE_SEPOLIA, USDC_BASE_SEPOLIA
+from payments.errors import SpendCapExceeded, SpendPermissionUnauthorized
 from payments.spend_permission import (
     SpendPermission,
     _PERMISSION_COMPONENTS,
     provision_smart_wallet_account,
     register_spend_permission,
+    revoke_spend_permission,
     sign_spend_permission,
+    spend,
 )
 from payments.wallet import LocalWallet
 
@@ -71,3 +75,26 @@ def test_sign_and_register_makes_the_permission_approved():
             permission.end, permission.salt, permission.extra_data,
         )
     ).call() is True
+
+
+@skip_no_key
+def test_spend_within_cap_then_above_cap_then_revoke():
+    owner = LocalWallet(_KEY)
+    account = provision_smart_wallet_account(owner, CHAIN_ID_BASE_SEPOLIA, nonce=1)  # fresh nonce, clean permission
+    spender = LocalWallet.from_env()
+    permission = SpendPermission(
+        account=account.address, spender=spender.address, token=USDC_BASE_SEPOLIA,
+        allowance=50_000, period=86400,
+    )
+    signature = sign_spend_permission(permission, account, CHAIN_ID_BASE_SEPOLIA)
+    register_spend_permission(permission, signature, spender, CHAIN_ID_BASE_SEPOLIA)
+
+    tx_hash = spend(permission, Decimal("0.03"), spender, CHAIN_ID_BASE_SEPOLIA)
+    assert tx_hash.startswith("0x")
+
+    with pytest.raises(SpendCapExceeded):
+        spend(permission, Decimal("0.03"), spender, CHAIN_ID_BASE_SEPOLIA)  # 0.03+0.03 > 0.05 cap this period
+
+    revoke_spend_permission(permission, spender, CHAIN_ID_BASE_SEPOLIA)
+    with pytest.raises(SpendPermissionUnauthorized):
+        spend(permission, Decimal("0.01"), spender, CHAIN_ID_BASE_SEPOLIA)
