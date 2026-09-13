@@ -87,3 +87,20 @@ class SettlementMismatch(PaymentError):
         self.tx_hash = tx_hash
         self.verified = verified
         super().__init__(f"settlement mismatch: {mismatch}")
+
+
+class SpendCapExceeded(PaymentError):
+    """The on-chain SpendPermissionManager rejected a spend as exceeding the
+    signed allowance for the current period -- ExceededSpendPermission(value,
+    allowance) on the real contract (src/SpendPermissionManager.sol)."""
+
+    def __init__(self, value: Decimal, allowance: Decimal):
+        self.value = value
+        self.allowance = allowance
+        super().__init__(f"spend {value} USDC exceeds allowance {allowance} USDC")
+
+
+class SpendPermissionUnauthorized(PaymentError):
+    """The permission is not currently approved-and-not-revoked --
+    UnauthorizedSpendPermission() on the real contract. Raised both for a
+    permission that was never approved and one that has been revoked."""
