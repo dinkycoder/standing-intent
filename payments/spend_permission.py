@@ -24,7 +24,7 @@ from payments.constants import (
     SPEND_PERMISSION_MANAGER,
     SPEND_PERMISSION_TYPE_STRING,
 )
-from payments.errors import SigningError
+from payments.errors import PaymentError
 from payments.wallet import Wallet
 
 # This module grows across Tasks 4-7; each task's own "-- append" snippet
@@ -117,6 +117,17 @@ _FACTORY_ABI = [
 ]
 
 
+class OnChainTransactionReverted(PaymentError):
+    """A broadcast transaction's receipt came back with status != 1 --
+    generic on-chain revert (bad initcode, out-of-gas, an unhandled
+    contract-level check), not a signing problem. SigningError is the
+    wrong class for this: it means "the wallet failed to produce a
+    signature," a different failure mode entirely -- flagged in Task 5's
+    review. Used across this module wherever a revert isn't one of the
+    two specific SpendPermissionManager errors (SpendCapExceeded,
+    SpendPermissionUnauthorized) that get their own typed exception."""
+
+
 @dataclass(frozen=True)
 class SmartWalletAccount:
     address: str
@@ -146,12 +157,22 @@ def provision_smart_wallet_account(owner: Wallet, network: int, nonce: int = 0) 
 
     address = factory.functions.getAddress(owners, nonce).call()
     if w3.eth.get_code(address) == b"":
+        # gasPrice must be explicit: build_transaction on an EIP-1559 chain
+        # (Base Sepolia/mainnet both are) auto-fills maxFeePerGas/
+        # maxPriorityFeePerGas when gasPrice is absent, and
+        # Wallet.send_transaction's setdefault("gasPrice", ...) then adds a
+        # gasPrice on top of those -- eth_account.sign_transaction rejects
+        # that combination outright. Passing gasPrice here makes
+        # build_transaction emit a legacy-type dict with no EIP-1559 fields,
+        # so send_transaction's setdefault becomes a no-op. Confirmed by
+        # reproducing the conflict live against the pinned web3/eth-account
+        # versions during Task 5's review -- this is not a hypothetical.
         tx = factory.functions.createAccount(owners, nonce).build_transaction({
-            "from": owner.address, "gas": 700_000,
+            "from": owner.address, "gas": 700_000, "gasPrice": w3.eth.gas_price,
         })
         tx_hash = owner.send_transaction(w3, tx)
         receipt = wait_for_receipt(w3, tx_hash)
         if receipt["status"] != 1:
-            raise SigningError(f"createAccount reverted: {tx_hash}")
+            raise OnChainTransactionReverted(f"createAccount reverted: {tx_hash}")
 
     return SmartWalletAccount(address=address, owner=owner)
