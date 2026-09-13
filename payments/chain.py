@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 
 from web3 import Web3
+from web3.exceptions import TransactionNotFound
 
 from payments.constants import rpc_urls
 
@@ -31,12 +32,19 @@ def get_web3(chain_id: int) -> Web3:
 def wait_for_receipt(w3: Web3, tx_hash: str, retries: int = 5, delay: float = 2.0) -> dict:
     """Poll for a receipt; Base block time is ~2s (payments/settlement.py's
     own retry budget uses the same figure)."""
+    last = None
     for _ in range(retries):
         try:
             receipt = w3.eth.get_transaction_receipt(tx_hash)
             if receipt is not None:
                 return receipt
-        except Exception:  # pragma: no cover - "not found yet" on some providers
+        except TransactionNotFound:
+            # TX not mined yet, keep polling
             pass
+        except Exception as exc:
+            # Transport/RPC error: capture it so the final TimeoutError includes
+            # the reason. Some free endpoints (publicnode) answer other calls fine
+            # but fail specifically on eth_getTransactionReceipt (payments/settlement.py).
+            last = exc
         time.sleep(delay)
-    raise TimeoutError(f"no receipt for {tx_hash} after {retries} retries")
+    raise TimeoutError(f"no receipt for {tx_hash} after {retries} retries: {last!r}")
