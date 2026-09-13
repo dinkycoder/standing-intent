@@ -12,13 +12,17 @@ a running seller instance.
 from __future__ import annotations
 
 import contextlib
+import os
 import socket
 import threading
 
 import pytest
 
 from payments import constants
+from payments.constants import CHAIN_ID_BASE_SEPOLIA
+from payments.spend_permission import SmartWalletAccount, provision_smart_wallet_account
 from payments.testing.seller import _silence_werkzeug, build_seller_app
+from payments.wallet import LocalWallet
 
 # The seller's recipient. Deliberately NOT the buyer's own address: with a
 # self-send, expected.payer == expected.pay_to and verify_settlement's
@@ -126,3 +130,24 @@ def wire_real_x402_task(task, base_url):
     for vendor in data["environment"]["vendors"]:
         vendor["url"] = f"{base_url}/{vendor['category']}?v={vendor['vendor_id']}"
     return type(task).model_validate(data)
+
+
+_ACCOUNT_KEY = os.environ.get("SPEND_PERMISSION_ACCOUNT_KEY")
+
+
+@pytest.fixture
+def spend_permission_account() -> SmartWalletAccount:
+    """A funded Coinbase Smart Wallet on Base Sepolia, SpendPermissionManager
+    already an owner -- see docs/superpowers/specs/2026-09-13-spend-permission
+    -account-design.md. Requires SPEND_PERMISSION_ACCOUNT_KEY (a throwaway
+    owner key, never a real user's) funded with a little Sepolia ETH for gas
+    and enough test USDC to cover the fixture's 0.05 USDC/day cap."""
+    if not _ACCOUNT_KEY:
+        pytest.skip("SPEND_PERMISSION_ACCOUNT_KEY unset")
+    owner = LocalWallet(_ACCOUNT_KEY)
+    account = provision_smart_wallet_account(owner, CHAIN_ID_BASE_SEPOLIA, nonce=0)
+    if account.owner.usdc_balance(CHAIN_ID_BASE_SEPOLIA) < 1:  # whole USDC, generous vs a 0.05 cap
+        pytest.skip(
+            f"fund {account.address} with Base Sepolia test USDC before running this suite"
+        )
+    return account
