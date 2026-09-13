@@ -903,10 +903,23 @@ def _translate_custom_error(exc: "_web3_exceptions.ContractCustomError") -> Exce
     # declares the error (confirmed live during planning) -- match the raw
     # selector against independently-recomputed keccak values instead of
     # trusting exc's own message.
+    #
+    # exc.args[0] is the FULL revert payload (selector + any ABI-encoded
+    # arguments), not a bare 4-byte selector -- a zero-argument error like
+    # UnauthorizedSpendPermission()'s payload happens to equal just its
+    # selector, which is what made an exact `==` comparison look correct
+    # during planning. ExceededSpendPermission(uint256,uint256) always
+    # carries two arguments, so its real payload is the selector plus 64
+    # more bytes and never equals the bare selector constant -- found and
+    # reproduced live in Task 7's review (a realistic
+    # ExceededSpendPermission(30000, 50000) encodes to 138 hex chars;
+    # `==` against the 10-char selector constant is always False, `==`
+    # against a zero-arg error's payload is True only by coincidence).
+    # startswith is correct for both cases.
     selector = exc.args[0] if exc.args else None
-    if selector == _UNAUTHORIZED_SELECTOR:
+    if selector is not None and selector.startswith(_UNAUTHORIZED_SELECTOR):
         return SpendPermissionUnauthorized()
-    if selector == _EXCEEDED_SELECTOR:
+    if selector is not None and selector.startswith(_EXCEEDED_SELECTOR):
         # ExceededSpendPermission(value, allowance) args aren't recoverable
         # from the bare selector match above (no abi-decoding of the revert
         # payload here) -- report what WE tried to spend against the
