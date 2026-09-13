@@ -24,7 +24,7 @@ from payments.constants import (
     SPEND_PERMISSION_MANAGER,
     SPEND_PERMISSION_TYPE_STRING,
 )
-from payments.errors import PaymentError
+from payments.errors import PaymentError, SpendPermissionUnauthorized
 from payments.wallet import Wallet
 
 # This module grows across Tasks 4-7; each task's own "-- append" snippet
@@ -176,3 +176,86 @@ def provision_smart_wallet_account(owner: Wallet, network: int, nonce: int = 0) 
             raise OnChainTransactionReverted(f"createAccount reverted: {tx_hash}")
 
     return SmartWalletAccount(address=address, owner=owner)
+
+
+_PERMISSION_COMPONENTS = [
+    {"name": "account", "type": "address"},
+    {"name": "spender", "type": "address"},
+    {"name": "token", "type": "address"},
+    {"name": "allowance", "type": "uint160"},
+    {"name": "period", "type": "uint48"},
+    {"name": "start", "type": "uint48"},
+    {"name": "end", "type": "uint48"},
+    {"name": "salt", "type": "uint256"},
+    {"name": "extraData", "type": "bytes"},
+]
+
+_MANAGER_ABI = [
+    {"type": "function", "name": "approveWithSignature", "stateMutability": "nonpayable",
+     "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS},
+                {"name": "signature", "type": "bytes"}],
+     "outputs": [{"name": "", "type": "bool"}]},
+    {"type": "function", "name": "spend", "stateMutability": "nonpayable",
+     "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS},
+                {"name": "value", "type": "uint160"}],
+     "outputs": []},
+    {"type": "function", "name": "revoke", "stateMutability": "nonpayable",
+     "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
+     "outputs": []},
+    {"type": "function", "name": "isApproved", "stateMutability": "view",
+     "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
+     "outputs": [{"name": "", "type": "bool"}]},
+    {"type": "error", "name": "ZeroValue", "inputs": []},
+    {"type": "error", "name": "UnauthorizedSpendPermission", "inputs": []},
+    {"type": "error", "name": "ExceededSpendPermission",
+     "inputs": [{"name": "value", "type": "uint256"}, {"name": "allowance", "type": "uint256"}]},
+]
+
+
+def _permission_tuple(permission: SpendPermission) -> tuple:
+    return (
+        Web3.to_checksum_address(permission.account),
+        Web3.to_checksum_address(permission.spender),
+        Web3.to_checksum_address(permission.token),
+        permission.allowance, permission.period, permission.start,
+        permission.end, permission.salt, permission.extra_data,
+    )
+
+
+def _manager_contract(w3: Web3):
+    return w3.eth.contract(address=Web3.to_checksum_address(SPEND_PERMISSION_MANAGER), abi=_MANAGER_ABI)
+
+
+def sign_spend_permission(permission: SpendPermission, account: SmartWalletAccount, network: int) -> bytes:
+    """SignatureWrapper{ ownerIndex: 0, signatureData: r||s||v }, ABI-encoded
+    -- src/CoinbaseSmartWallet.sol's SignatureWrapper struct. ownerIndex is
+    hardcoded 0 because provision_smart_wallet_account always puts `owner`
+    at index 0 (owners[0] in the createAccount call)."""
+    inner = _spend_permission_hash(permission, network)
+    outer = _replay_safe_hash(inner, network, account.address)
+    signature_data = account.owner.sign_digest(outer)
+    # abi.encode(SignatureWrapper): (uint256 ownerIndex, bytes signatureData)
+    # -- a static uint256 head word, then the dynamic bytes' offset/length/data.
+    owner_index = _uint(0)
+    offset = _uint(64)
+    length = _uint(len(signature_data))
+    padded = signature_data + b"\x00" * (-len(signature_data) % 32)
+    return owner_index + offset + length + padded
+
+
+def register_spend_permission(
+    permission: SpendPermission, signature: bytes, spender: Wallet, network: int
+) -> str:
+    w3 = get_web3(network)
+    manager = _manager_contract(w3)
+    # gasPrice explicit -- see Task 5's build_transaction comment: without it,
+    # build_transaction's EIP-1559 auto-fill conflicts with send_transaction's
+    # own gasPrice default and eth_account.sign_transaction rejects the tx.
+    tx = manager.functions.approveWithSignature(
+        _permission_tuple(permission), signature
+    ).build_transaction({"from": spender.address, "gas": 300_000, "gasPrice": w3.eth.gas_price})
+    tx_hash = spender.send_transaction(w3, tx)
+    receipt = wait_for_receipt(w3, tx_hash)
+    if receipt["status"] != 1:
+        raise SpendPermissionUnauthorized(f"approveWithSignature reverted: {tx_hash}")
+    return tx_hash
