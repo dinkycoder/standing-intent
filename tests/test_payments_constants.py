@@ -110,3 +110,23 @@ def test_testnet_facilitator_advertises_exact_base_sepolia():
 def test_transfer_topic_is_keccak_of_transfer_event():
     from eth_utils import keccak
     assert "0x" + keccak(text="Transfer(address,address,uint256)").hex() == constants.TRANSFER_TOPIC
+
+
+@pytest.mark.parametrize("chain_id", [
+    constants.CHAIN_ID_BASE_SEPOLIA, constants.CHAIN_ID_BASE_MAINNET,
+])
+def test_spend_permission_manager_typehash_matches_pinned_source(chain_id):
+    # Pin for SPEND_PERMISSION_MANAGER (constants.py). CLAUDE.md rule 2 wants an
+    # assertion only the *real* contract would satisfy -- a bytecode-non-empty
+    # check would pass for any contract at that address. SPEND_PERMISSION_TYPEHASH
+    # is a public constant getter unique to this ABI; the selector is computed
+    # the same way as SYMBOL_SEL/DECIMALS_SEL above (keccak of the signature,
+    # first 4 bytes), and the expected return value is recomputed independently
+    # from SPEND_PERMISSION_TYPE_STRING rather than hardcoded (same pattern as
+    # test_transfer_topic_is_keccak_of_transfer_event).
+    from eth_utils import keccak
+
+    selector = "0x" + keccak(text="SPEND_PERMISSION_TYPEHASH()").hex()[:8]
+    expected = "0x" + keccak(text=constants.SPEND_PERMISSION_TYPE_STRING).hex()
+    got = _eth_call(chain_id, constants.SPEND_PERMISSION_MANAGER, selector)
+    assert got.lower() == expected.lower()
