@@ -20,7 +20,7 @@ foundryup-init: installing latest foundryup
 foundryup-init: downloading attestation...
 foundryup-init: verifying binary integrity...
 foundryup-init: binary verified ✓
-foundryup-init: installing foundryup to /c/Users/dinky/.foundry/bin...
+foundryup-init: installing foundryup to ~/.foundry/bin...
 foundryup-init: foundryup was installed successfully!
 ```
 
@@ -28,10 +28,10 @@ foundryup-init: foundryup was installed successfully!
 
 ```bash
 # Add foundry to PATH:
-export PATH="$PATH:/c/Users/dinky/.foundry/bin"
+export PATH="$PATH:$HOME/.foundry/bin"
 
 # Install Foundry itself (upgraded from v1.7.1 to v1.8.1):
-/c/Users/dinky/.foundry/bin/foundryup
+~/.foundry/bin/foundryup
 ```
 
 This installs `forge`, `cast`, `anvil`, `chisel`, and `solar`.
@@ -57,7 +57,7 @@ Build Profile: dist
 ### Step 4: Clone the spend-permissions repository
 
 ```bash
-cd C:\Users\dinky\projects\standing-intent\.claude\worktrees\week4-spend-permission
+# From your project root:
 git clone https://github.com/coinbase/spend-permissions contracts/spend-router
 cd contracts/spend-router
 git checkout e0004e63edc4e17de7aa978293800ac7a16892e5
@@ -68,7 +68,7 @@ git checkout e0004e63edc4e17de7aa978293800ac7a16892e5
 ### Step 5: Install Foundry dependencies
 
 ```bash
-export PATH="$PATH:/c/Users/dinky/.foundry/bin"
+export PATH="$PATH:$HOME/.foundry/bin"
 forge install
 ```
 
@@ -111,7 +111,7 @@ To reproduce this entire setup from scratch in a fresh clone:
 
 ## Gotchas and Notes
 
-- **PATH persistence:** The `export PATH="$PATH:/c/Users/dinky/.foundry/bin"` statement only affects the current bash session. Add it to your `.bashrc` if working frequently with Foundry.
+- **PATH persistence:** The `export PATH="$PATH:$HOME/.foundry/bin"` statement only affects the current bash session. Add it to your `.bashrc` if working frequently with Foundry.
 - **PowerShell caveat:** The original `irm https://foundry.paradigm.xyz | iex` PowerShell syntax was not used here; native bash execution of the shell script worked without issues.
 - **Timeouts:** `forge install` and `forge build` took longer than the default 120-second timeout on first run (network downloads + compilation). Monitoring the output file confirmed both completed successfully.
 - **Not a git submodule:** `contracts/spend-router/` is a full clone of an external repo at a pinned commit, left untracked in this repo's git history. This keeps the main repo's commit history clean and independent of upstream changes to spend-permissions.
