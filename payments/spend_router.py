@@ -10,9 +10,15 @@ from decimal import Decimal
 
 from web3 import Web3
 
-from payments.chain import get_web3, wait_for_receipt
-from payments.constants import SPEND_ROUTER
-from payments.spend_permission import OnChainTransactionReverted, _permission_tuple, SpendPermission
+from payments.chain import get_web3
+from payments.constants import CHAIN_ID_BASE_SEPOLIA, SPEND_ROUTER
+from payments.errors import PaymentError
+from payments.spend_permission import (
+    OnChainTransactionReverted,
+    SpendPermission,
+    _permission_tuple,
+    _receipt_or_raise,
+)
 from payments.wallet import Wallet
 
 _PERMISSION_COMPONENTS = [  # duplicated from spend_permission.py's _PERMISSION_COMPONENTS
@@ -43,6 +49,24 @@ def _router_contract(w3: Web3):
     return w3.eth.contract(address=Web3.to_checksum_address(SPEND_ROUTER), abi=_ROUTER_ABI)
 
 
+def _require_router_chain(network: int) -> None:
+    """SPEND_ROUTER is a single Base-Sepolia address (payments/constants.py --
+    our own deployment, not a canonical cross-chain one). Calling the router
+    on any other chain does NOT revert: the EVM treats a call to a codeless
+    address as a success with empty return data, so the transaction mines with
+    status=1 and this module reports a tx hash as though a payment had
+    settled, while nothing moved. Refuse the chain instead of silently
+    no-opping -- CLAUDE.md rule 2's "a plausible but wrong address that fails
+    silently is worse than a crash." Lift this by making SPEND_ROUTER a
+    chain-keyed dict once the router is deployed elsewhere."""
+    if network != CHAIN_ID_BASE_SEPOLIA:
+        raise PaymentError(
+            f"SpendRouter is only deployed on Base Sepolia ({CHAIN_ID_BASE_SEPOLIA}); "
+            f"refusing to call {SPEND_ROUTER} on chain {network}, where it has no code "
+            "and the call would silently succeed without paying anyone"
+        )
+
+
 def encode_extra_data(executor: str, recipient: str) -> bytes:
     """abi.encode(executor, recipient) -- two static addresses, 64 bytes,
     matching SpendRouter.encodeExtraData exactly (src/SpendRouter.sol)."""
@@ -54,6 +78,7 @@ def encode_extra_data(executor: str, recipient: str) -> bytes:
 def spend_and_route_with_signature(
     permission: SpendPermission, value: Decimal, signature: bytes, spender: Wallet, network: int
 ) -> str:
+    _require_router_chain(network)
     w3 = get_web3(network)
     router = _router_contract(w3)
     atomic_value = int(value * Decimal(10) ** 6)
@@ -62,7 +87,7 @@ def spend_and_route_with_signature(
         _permission_tuple(permission), atomic_value, signature
     ).build_transaction({"from": spender.address, "gas": 300_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
-    receipt = wait_for_receipt(w3, tx_hash)
+    receipt = _receipt_or_raise(w3, tx_hash, "spendAndRouteWithSignature")
     if receipt["status"] != 1:
         raise OnChainTransactionReverted(f"spendAndRouteWithSignature reverted: {tx_hash}")
     return tx_hash
@@ -73,6 +98,7 @@ def spend_and_route(permission: SpendPermission, value: Decimal, spender: Wallet
     signature -- use after a prior approveBatchWithSignature call, not built
     in this plan; single-permission batch-signing is Task 12's known gap,
     same TODO as _PERMISSION_COMPONENTS above)."""
+    _require_router_chain(network)
     w3 = get_web3(network)
     router = _router_contract(w3)
     atomic_value = int(value * Decimal(10) ** 6)
@@ -81,7 +107,7 @@ def spend_and_route(permission: SpendPermission, value: Decimal, spender: Wallet
         _permission_tuple(permission), atomic_value
     ).build_transaction({"from": spender.address, "gas": 250_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
-    receipt = wait_for_receipt(w3, tx_hash)
+    receipt = _receipt_or_raise(w3, tx_hash, "spendAndRoute")
     if receipt["status"] != 1:
         raise OnChainTransactionReverted(f"spendAndRoute reverted: {tx_hash}")
     return tx_hash

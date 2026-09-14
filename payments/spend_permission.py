@@ -20,13 +20,19 @@ import web3.exceptions as _web3_exceptions
 
 from payments.chain import get_web3, wait_for_receipt
 from payments.constants import (
+    CHAIN_ID_BASE_SEPOLIA,
     SMART_WALLET_DOMAIN_NAME,
     SMART_WALLET_DOMAIN_VERSION,
     SMART_WALLET_FACTORY_V1_1,
     SPEND_PERMISSION_MANAGER,
     SPEND_PERMISSION_TYPE_STRING,
 )
-from payments.errors import PaymentError, SpendCapExceeded, SpendPermissionUnauthorized
+from payments.errors import (
+    PaymentError,
+    SettlementNotConfirmed,
+    SpendCapExceeded,
+    SpendPermissionUnauthorized,
+)
 from payments.wallet import Wallet
 
 # This module grows across Tasks 4-7; each task's own "-- append" snippet
@@ -54,6 +60,13 @@ class SpendPermission:
     period: int              # seconds
     start: int = 0
     end: int = NO_EXPIRY
+    # salt distinguishes two otherwise-identical permissions. Treat it as
+    # single-use whenever a permission might ever be revoked:
+    # SpendPermissionManager._isRevoked[hash] is set forever and never
+    # cleared, so a revoked hash can never be re-approved: confirmed live --
+    # re-approving one mines with status=1 and leaves isRevoked() true and
+    # isValid() false. Reusing salt=0 across runs is what makes a revocation
+    # test pass once and then fail for the life of that account/spender pair.
     salt: int = 0
     extra_data: bytes = b""
 
@@ -130,6 +143,21 @@ class OnChainTransactionReverted(PaymentError):
     SpendPermissionUnauthorized) that get their own typed exception."""
 
 
+def _receipt_or_raise(w3: Web3, tx_hash: str, what: str) -> dict:
+    """wait_for_receipt, with its bare TimeoutError translated into the
+    payment taxonomy. Every call site is AFTER broadcast, so a missing
+    receipt means "the transaction may have landed and we cannot confirm
+    it" -- exactly the situation SettlementNotConfirmed exists for in the
+    x402 path (payments/settlement.py), and it already carries the tx hash
+    a caller needs to reconcile by hand. payments/errors.py's own module
+    docstring requires that no bare exception escape the payment path; a
+    bare TimeoutError out of a money-moving call violates that."""
+    try:
+        return wait_for_receipt(w3, tx_hash)
+    except TimeoutError as exc:
+        raise SettlementNotConfirmed(tx_hash, f"{what}: {exc}") from exc
+
+
 @dataclass(frozen=True)
 class SmartWalletAccount:
     address: str
@@ -173,7 +201,7 @@ def provision_smart_wallet_account(owner: Wallet, network: int, nonce: int = 0) 
             "from": owner.address, "gas": 700_000, "gasPrice": w3.eth.gas_price,
         })
         tx_hash = owner.send_transaction(w3, tx)
-        receipt = wait_for_receipt(w3, tx_hash)
+        receipt = _receipt_or_raise(w3, tx_hash, "createAccount")
         if receipt["status"] != 1:
             raise OnChainTransactionReverted(f"createAccount reverted: {tx_hash}")
 
@@ -207,7 +235,28 @@ _MANAGER_ABI = [
     {"type": "function", "name": "revokeAsSpender", "stateMutability": "nonpayable",
      "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
      "outputs": []},
+    # isApproved / isRevoked / isValid are three DIFFERENT questions on this
+    # contract, and the difference matters (measured on Base Sepolia against
+    # the deployed manager, one permission walked through all three states):
+    #
+    #                     isApproved  isRevoked  isValid
+    #   before approve      False       False     False
+    #   after  approve      True        False     True
+    #   after  revoke       True        True      False
+    #
+    # isApproved is the raw _isApproved[hash] flag and STAYS TRUE after a
+    # revocation -- so "isApproved() is true" does not mean "this permission
+    # can spend." isValid() is the conjunction (and also applies the time
+    # window). register_spend_permission below uses isApproved AND NOT
+    # isRevoked: it wants to know whether the approval landed, without also
+    # failing a permission that is merely not started yet.
     {"type": "function", "name": "isApproved", "stateMutability": "view",
+     "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
+     "outputs": [{"name": "", "type": "bool"}]},
+    {"type": "function", "name": "isRevoked", "stateMutability": "view",
+     "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
+     "outputs": [{"name": "", "type": "bool"}]},
+    {"type": "function", "name": "isValid", "stateMutability": "view",
      "inputs": [{"name": "spendPermission", "type": "tuple", "components": _PERMISSION_COMPONENTS}],
      "outputs": [{"name": "", "type": "bool"}]},
     {"type": "error", "name": "ZeroValue", "inputs": []},
@@ -260,9 +309,30 @@ def register_spend_permission(
         _permission_tuple(permission), signature
     ).build_transaction({"from": spender.address, "gas": 300_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
-    receipt = wait_for_receipt(w3, tx_hash)
+    receipt = _receipt_or_raise(w3, tx_hash, "approveWithSignature")
     if receipt["status"] != 1:
         raise SpendPermissionUnauthorized(f"approveWithSignature reverted: {tx_hash}")
+    # status == 1 is NOT proof of approval. approveWithSignature returns a
+    # bool, and returns FALSE -- without reverting -- for a permission that is
+    # already revoked; _isRevoked[hash] is never cleared, so a hash that was
+    # ever revoked can never be approved again. Confirmed live: re-registering
+    # a revoked permission mines with status=1 and approves nothing.
+    #
+    # A transaction's return value is not readable from its receipt, so read
+    # the state back instead -- two cheap eth_calls, no gas. Note this must
+    # NOT be an isApproved() check alone: isApproved stays true across a
+    # revocation (see the table on _MANAGER_ABI), so the isApproved-only
+    # version of this guard passed happily on a revoked permission when it was
+    # tried on chain.
+    permission_tuple = _permission_tuple(permission)
+    approved = manager.functions.isApproved(permission_tuple).call()
+    revoked = manager.functions.isRevoked(permission_tuple).call()
+    if not approved or revoked:
+        raise SpendPermissionUnauthorized(
+            f"approveWithSignature mined ({tx_hash}) but the permission is not usable: "
+            f"isApproved={approved} isRevoked={revoked}. A revoked permission hash can "
+            "never be re-approved -- construct the permission with a fresh salt."
+        )
     return tx_hash
 
 
@@ -306,6 +376,20 @@ def _translate_custom_error(exc: "_web3_exceptions.ContractCustomError") -> Exce
 
 
 def spend(permission: SpendPermission, value: Decimal, spender: Wallet, network: int) -> str:
+    """The OPEN-ENDED path: USDC lands in the spender's (our) wallet first and
+    is forwarded in a second transaction -- a custodial hop. The design spec
+    restricts it to Base Sepolia until a money-transmission legal opinion
+    exists, and that restriction is enforced here rather than left as prose:
+    on mainnet the hop would move real user funds through a wallet this
+    service holds the key to, which is exactly CLAUDE.md hard rule 1's
+    "receive funds and forward them". The allowlisted path
+    (payments/spend_router.py) has no such hop and is the one that graduates
+    to mainnet."""
+    if network != CHAIN_ID_BASE_SEPOLIA:
+        raise PaymentError(
+            "the open-ended spend path is Base-Sepolia-only until the money-transmission "
+            "opinion docs/PMF_AND_BUILD_PLAN.md's Caveats section calls for exists"
+        )
     w3 = get_web3(network)
     manager = _manager_contract(w3)
     atomic_value = int(value * Decimal(10) ** 6)
@@ -317,11 +401,21 @@ def spend(permission: SpendPermission, value: Decimal, spender: Wallet, network:
         if isinstance(translated, SpendCapExceeded):
             raise SpendCapExceeded(value=value, allowance=_atomic_to_decimal(permission.allowance)) from exc
         raise translated from exc
+    except _web3_exceptions.ContractLogicError as exc:
+        # A plain Solidity `require`/`revert("string")`, not one of the
+        # manager's custom errors -- most commonly "ERC20: transfer amount
+        # exceeds balance" when the Smart Wallet holds less USDC than the
+        # permission allows (reproduced live on Base Sepolia while running
+        # this branch's integration suite). ContractCustomError is a SUBCLASS
+        # of ContractLogicError, so this clause must stay below it. Without
+        # it a raw web3 exception escapes a money-moving call, which
+        # payments/errors.py's module docstring forbids.
+        raise OnChainTransactionReverted(f"spend dry-run reverted: {exc}") from exc
 
     # gasPrice explicit -- see Task 5's build_transaction comment.
     tx = fn.build_transaction({"from": spender.address, "gas": 200_000, "gasPrice": w3.eth.gas_price})
     tx_hash = spender.send_transaction(w3, tx)
-    receipt = wait_for_receipt(w3, tx_hash)
+    receipt = _receipt_or_raise(w3, tx_hash, "spend")
     if receipt["status"] != 1:
         raise OnChainTransactionReverted(f"spend reverted after passing dry-run: {tx_hash}")
     return tx_hash
@@ -344,7 +438,7 @@ def revoke_spend_permission(permission: SpendPermission, revoker: Wallet, networ
         "from": revoker.address, "gas": 150_000, "gasPrice": w3.eth.gas_price,
     })
     tx_hash = revoker.send_transaction(w3, tx)
-    receipt = wait_for_receipt(w3, tx_hash)
+    receipt = _receipt_or_raise(w3, tx_hash, "revokeAsSpender")
     if receipt["status"] != 1:
         raise OnChainTransactionReverted(f"revokeAsSpender reverted: {tx_hash}")
     return tx_hash
