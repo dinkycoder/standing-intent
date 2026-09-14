@@ -81,6 +81,12 @@ SMART_WALLET_FACTORY_V1_1 = "0xBA5ED110eFDBa3D005bfC882d75358ACBbB85842"
 SMART_WALLET_DOMAIN_NAME = "Coinbase Smart Wallet"
 SMART_WALLET_DOMAIN_VERSION = "1"
 
+# SpendRouter -- OUR OWN deployment (not a Coinbase canonical address; the
+# upstream repo lists it "TBD"). Deployed from src/SpendRouter.sol at the same
+# pinned commit as SPEND_PERMISSION_MANAGER (e0004e6). Recorded:
+# docs/week4-spend-router-deploy.md
+SPEND_ROUTER = "0x3b52C62a2D14bD47227B65AF05568cb5E135C09A"  # Base Sepolia
+
 
 def rpc_urls(chain_id: int) -> tuple[str, ...]:
     """RPC endpoints for a chain, env override first."""
