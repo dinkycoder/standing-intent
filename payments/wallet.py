@@ -21,6 +21,8 @@ class Wallet(Protocol):
     def address(self) -> str: ...
     def x402_signer(self) -> object: ...
     def usdc_balance(self, network: int) -> Decimal: ...
+    def sign_digest(self, digest: bytes) -> bytes: ...
+    def send_transaction(self, w3, tx: dict) -> str: ...
 
 
 def _usdc_balance_of(address: str, network: int) -> Decimal:
@@ -61,6 +63,28 @@ class LocalWallet:
 
     def usdc_balance(self, network: int) -> Decimal:
         return _usdc_balance_of(self.address, network)
+
+    def sign_digest(self, digest: bytes) -> bytes:
+        """Raw ECDSA signature (r||s||v, 65 bytes) over a pre-computed 32-byte
+        digest. Used for the Spend Permission's nested EIP-712 hash
+        (payments/spend_permission.py), which this project computes itself --
+        see the design spec's "Signing" section for why the digest can't go
+        through eth_account's own typed-data hasher."""
+        signed = self._account.unsafe_sign_hash(digest)
+        return bytes(signed.signature)
+
+    def send_transaction(self, w3, tx: dict) -> str:
+        """Fill in from/nonce/chainId/gasPrice if absent, sign, broadcast.
+        Returns the tx hash; the caller waits for the receipt separately
+        (payments/chain.py.wait_for_receipt) -- same split as pay()/
+        verify_settlement in payments/client.py and payments/settlement.py."""
+        filled = dict(tx)
+        filled.setdefault("from", self.address)
+        filled.setdefault("nonce", w3.eth.get_transaction_count(self.address))
+        filled.setdefault("gasPrice", w3.eth.gas_price)
+        signed = self._account.sign_transaction(filled)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        return "0x" + tx_hash.hex().removeprefix("0x")
 
 
 class CdpWallet:

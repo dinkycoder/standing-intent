@@ -27,5 +27,8 @@ dist/
 .vscode/
 *.log
 
+# contracts (external clones at pinned commits, see docs/FOUNDRY_SETUP.md)
+contracts/spend-router/
+
 # local claude code state
 .claude/settings.local.json

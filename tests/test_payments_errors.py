@@ -248,3 +248,16 @@ def test_spend_control_authorizes_offer_amount_as_plain_decimal(monkeypatch):
     assert got == "$0.01"                       # the agreed price, not $4.99
     assert "E" not in got and "e" not in got    # plain decimal, not exponent form
     assert parse_money(got)["amount"] == "0.01"
+
+
+def test_spend_cap_exceeded_carries_value_and_allowance():
+    from payments.errors import SpendCapExceeded
+    err = SpendCapExceeded(Decimal("0.06"), Decimal("0.05"))
+    assert err.value == Decimal("0.06")
+    assert err.allowance == Decimal("0.05")
+    assert "0.06" in str(err) and "0.05" in str(err)
+
+
+def test_spend_permission_unauthorized_is_a_payment_error():
+    from payments.errors import PaymentError, SpendPermissionUnauthorized
+    assert issubclass(SpendPermissionUnauthorized, PaymentError)

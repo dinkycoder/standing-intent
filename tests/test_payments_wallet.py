@@ -65,3 +65,34 @@ def test_usdc_balance_bad_address_raises_value_error_before_any_rpc():
 def test_cdp_wallet_is_a_seam():
     with pytest.raises(NotImplementedError):
         CdpWallet()
+
+
+def test_sign_digest_recovers_to_wallet_address(throwaway_key):
+    wallet = LocalWallet(throwaway_key)
+    digest = b"\x11" * 32
+    sig = wallet.sign_digest(digest)
+    assert len(sig) == 65
+    r, s, v = int.from_bytes(sig[:32], "big"), int.from_bytes(sig[32:64], "big"), sig[64]
+    recovered = Account._recover_hash(digest, vrs=(v, r, s))
+    assert recovered.lower() == wallet.address.lower()
+
+
+def test_send_transaction_returns_a_tx_hash(monkeypatch, throwaway_key):
+    from unittest.mock import PropertyMock
+    from web3 import Web3
+    wallet = LocalWallet(throwaway_key)
+    w3 = Web3(Web3.HTTPProvider("https://base-sepolia-rpc.publicnode.com", request_kwargs={"timeout": 20}))
+    sent = {}
+
+    def fake_send_raw_transaction(raw):
+        sent["raw"] = raw
+        return b"\xab" * 32
+
+    monkeypatch.setattr(w3.eth, "send_raw_transaction", fake_send_raw_transaction)
+    monkeypatch.setattr(w3.eth, "get_transaction_count", lambda addr: 7)
+    monkeypatch.setattr(type(w3.eth), "gas_price", PropertyMock(return_value=1_000_000))
+    tx = {"to": "0x000000000000000000000000000000000000bEEF", "data": "0x", "value": 0,
+          "gas": 21000, "chainId": 84532}
+    tx_hash = wallet.send_transaction(w3, tx)
+    assert tx_hash == "0x" + "ab" * 32
+    assert "raw" in sent
