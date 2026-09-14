@@ -25,6 +25,7 @@ some client-side function was merely called.
 from __future__ import annotations
 
 import os
+import time
 from decimal import Decimal
 
 import pytest
@@ -37,6 +38,13 @@ from payments.spend_permission import (
     sign_spend_permission,
     spend,
 )
+# Fixtures in payments/testing/fixtures.py are not a conftest plugin; every
+# consumer imports them explicitly (same as tests/test_payments_seller.py and
+# tests/test_payments_integration.py do with x402_seller). Without this import
+# all three tests below ERROR at setup with "fixture 'spend_permission_account'
+# not found" -- which is exactly what they did on their first real run, the run
+# this branch's review found had never happened.
+from payments.testing.fixtures import spend_permission_account  # noqa: F401
 from payments.wallet import LocalWallet
 
 pytestmark = pytest.mark.integration
@@ -68,6 +76,14 @@ def signed_permission(spend_permission_account):
         token=USDC_BASE_SEPOLIA,
         allowance=50_000,       # atomic USDC: Decimal("0.05") * 10**6
         period=86400,
+        # Fresh salt per permission, ALWAYS. SpendPermissionManager keeps
+        # _isRevoked[hash] set forever, so test_revoked_permission_rejects_
+        # further_spend below would poison the default salt=0 hash for this
+        # (account, spender) pair permanently: every later run would find the
+        # permission already-revoked and unapprovable, and the whole file
+        # would fail for the rest of the wallet's life. time.time_ns() is
+        # unique per call within a run and across runs.
+        salt=time.time_ns(),
     )
     signature = sign_spend_permission(permission, account, CHAIN_ID_BASE_SEPOLIA)
     register_spend_permission(permission, signature, spender, CHAIN_ID_BASE_SEPOLIA)

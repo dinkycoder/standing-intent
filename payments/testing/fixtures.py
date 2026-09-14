@@ -15,6 +15,7 @@ import contextlib
 import os
 import socket
 import threading
+from decimal import Decimal
 
 import pytest
 
@@ -22,7 +23,7 @@ from payments import constants
 from payments.constants import CHAIN_ID_BASE_SEPOLIA
 from payments.spend_permission import SmartWalletAccount, provision_smart_wallet_account
 from payments.testing.seller import _silence_werkzeug, build_seller_app
-from payments.wallet import LocalWallet
+from payments.wallet import LocalWallet, _usdc_balance_of
 
 # The seller's recipient. Deliberately NOT the buyer's own address: with a
 # self-send, expected.payer == expected.pay_to and verify_settlement's
@@ -134,6 +135,35 @@ def wire_real_x402_task(task, base_url):
 
 _ACCOUNT_KEY = os.environ.get("SPEND_PERMISSION_ACCOUNT_KEY")
 
+# Every Spend Permission integration test provisions the Smart Wallet at this
+# nonce, so ONE funded address unblocks the whole suite. Permissions are
+# distinguished by salt (see SpendPermission.salt), not by using a different
+# wallet per test -- which is what earlier revisions did, at the cost of
+# needing three separately funded wallets.
+SPEND_PERMISSION_ACCOUNT_NONCE = 0
+
+
+def skip_unless_funded(address: str, minimum: Decimal = Decimal("1")) -> None:
+    """Skip (never fail) when `address` holds less than `minimum` test USDC.
+
+    Checks the SMART WALLET, which is what SpendPermissionManager.spend()
+    debits -- not its owner EOA, which only ever pays gas. An empty wallet is
+    an environment fact, not a defect, and this repo's convention is to skip
+    on those with a message that says exactly what to do (see
+    tests/test_payments_constants.py). A real revert still fails loudly: the
+    threshold is far below any single test's spend, so this cannot mask an
+    under-funded-by-a-little failure.
+    """
+    try:
+        balance = _usdc_balance_of(address, CHAIN_ID_BASE_SEPOLIA)
+    except ConnectionError as exc:  # RPC outage is not a funding verdict
+        pytest.skip(f"cannot read {address}'s USDC balance: {exc!r}")
+    if balance < minimum:
+        pytest.skip(
+            f"fund {address} (the Smart Wallet, not its owner) with Base Sepolia test "
+            f"USDC before running this suite -- it holds {balance}"
+        )
+
 
 @pytest.fixture
 def spend_permission_account() -> SmartWalletAccount:
@@ -145,9 +175,13 @@ def spend_permission_account() -> SmartWalletAccount:
     if not _ACCOUNT_KEY:
         pytest.skip("SPEND_PERMISSION_ACCOUNT_KEY unset")
     owner = LocalWallet(_ACCOUNT_KEY)
-    account = provision_smart_wallet_account(owner, CHAIN_ID_BASE_SEPOLIA, nonce=0)
-    if account.owner.usdc_balance(CHAIN_ID_BASE_SEPOLIA) < 1:  # whole USDC, generous vs a 0.05 cap
-        pytest.skip(
-            f"fund {account.address} with Base Sepolia test USDC before running this suite"
-        )
+    account = provision_smart_wallet_account(
+        owner, CHAIN_ID_BASE_SEPOLIA, nonce=SPEND_PERMISSION_ACCOUNT_NONCE
+    )
+    # Check the SMART WALLET's balance, not the owner EOA's: spend() pulls USDC
+    # from permission.account -- the wallet -- and the owner EOA only ever pays
+    # gas. Reading owner.usdc_balance() here made the guard skip (or, worse,
+    # pass) on a balance that has nothing to do with whether the spend can
+    # settle, while the skip message named the wallet address.
+    skip_unless_funded(account.address)
     return account
