@@ -126,9 +126,16 @@ def _ask_claude(description: str, mandate: Mandate, candidates: list[Vendor]) ->
     llm = ChatAnthropic(model=_MODEL, temperature=0)
     # include_raw=True: the parsed _Decision alone drops token-usage metadata,
     # which _token_cost_usdc needs (Known limitations) -- this returns
-    # {"raw": AIMessage, "parsed": _Decision, "parsing_error": ...}.
+    # {"raw": AIMessage, "parsed": _Decision | None, "parsing_error": BaseException | None}.
+    # Confirmed against langchain_core's own with_structured_output source: with
+    # include_raw=True a parsing failure is CAUGHT and returned in
+    # parsing_error, not raised -- unlike the include_raw=False default. Must
+    # check it explicitly or a parse failure silently becomes parsed=None,
+    # which run_task would otherwise treat as an unexplained escalation.
     structured = llm.with_structured_output(_Decision, include_raw=True)
     result = structured.invoke(_build_prompt(description, mandate, candidates))
+    if result["parsing_error"] is not None:
+        raise result["parsing_error"]
     return result["parsed"], result["raw"].usage_metadata
 ```
 
@@ -140,10 +147,13 @@ through to the prompt for the LLM to weigh even though no `Vendor` field
 currently carries a quality signal for it to weigh *against* — see Known
 limitations.
 
-**Model:** `claude-haiku-4-5-20251001` by default (cheap and fast — nothing in
-today's task set needs a stronger model; see the honesty note below),
-overridable via an env var (`PLANNER_MODEL`) so a harder future task set can
-swap it without a code change.
+**Model:** `claude-haiku-4-5` by default — $1.00/$5.00 per 1M input/output
+tokens, confirmed against the current pricing table rather than assumed; cheap
+and fast, and nothing in today's task set needs a stronger model (see the
+honesty note below). Overridable via an env var (`PLANNER_MODEL`) so a harder
+future task set can swap it without a code change. **Use the bare model ID —
+no date suffix.** (A date-suffixed variant appears in this project's own
+tooling elsewhere; the live API model string is exactly `claude-haiku-4-5`.)
 
 ## Error handling
 
@@ -200,11 +210,13 @@ Two tiers, matching the project's existing integration/offline split:
 existing `X402_WALLET_KEY`. Unset in CI, same convention as every other secret
 in this repo.
 
-**New dependency:** `langchain-anthropic` (and whatever `langchain-core`
-version it pulls in) added to `requirements.txt`. Per the x402 SDK's own
-precedent in this repo ("pin exact versions... confirmed to resolve in
-implementation task 1" — CLAUDE.md's SDK caution section), **the exact
-resolvable version is confirmed during implementation, not guessed here.**
+**New dependency:** `langchain-anthropic==1.7.2` (pulling `langchain-core==1.6.3`)
+— installed and confirmed to resolve cleanly during this design's writing, per
+the x402 SDK's own precedent in this repo ("pin exact versions" — CLAUDE.md's
+SDK caution section). `ChatAnthropic`'s constructor and
+`with_structured_output`'s signature (`schema`, `include_raw`, `method`) were
+both confirmed directly against the installed package's own source, not
+assumed from a recalled API shape.
 
 ## Known limitations (stated plainly, not glossed over)
 
