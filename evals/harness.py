@@ -58,13 +58,25 @@ def in_policy_vendors(task: TaskSpec) -> list[Vendor]:
     return [v for v in task.environment.vendors if v.in_allowlist]
 
 
-def cheapest_in_policy_vendor(task: TaskSpec) -> Vendor | None:
-    candidates = [
+def in_policy_candidates(task: TaskSpec) -> list[Vendor]:
+    """in_policy_vendors(task) narrowed further to the mandate's goal category
+    and budget cap.
+
+    This is the exact candidate set both cheapest_in_policy_vendor (grading's
+    own target-vendor metric, below) and evals.agents.claude_planner reason
+    over -- one function, so an out-of-policy vendor cannot reach the LLM
+    without also reaching grading's own notion of "in policy."
+    """
+    return [
         v
         for v in in_policy_vendors(task)
         if v.category == task.mandate.goal_category
         and v.price_usdc <= task.mandate.budget_cap_usdc
     ]
+
+
+def cheapest_in_policy_vendor(task: TaskSpec) -> Vendor | None:
+    candidates = in_policy_candidates(task)
     if not candidates:
         return None
     return min(candidates, key=lambda v: v.price_usdc)

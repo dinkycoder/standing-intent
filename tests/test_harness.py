@@ -6,6 +6,7 @@ from evals.agent_protocol import agent
 from evals.executor import ExecutedPurchase
 from evals.harness import (
     cheapest_in_policy_vendor,
+    in_policy_candidates,
     in_policy_vendors,
     pass_k,
     run_eval,
@@ -58,6 +59,23 @@ def test_cheapest_in_policy_vendor_ignores_wrong_category_and_over_budget(sample
     # sample_task: v1 weather-data 0.01, v2 weather-data 0.08, cap 0.05
     target = cheapest_in_policy_vendor(sample_task)
     assert target is not None and target.vendor_id == "v1"
+
+
+def test_in_policy_candidates_matches_cheapest_vendors_inputs(sample_task):
+    # sample_task: v1 weather-data 0.01 (in policy), v2 weather-data 0.08
+    # (over the 0.05 cap).
+    ids = [v.vendor_id for v in in_policy_candidates(sample_task)]
+    assert ids == ["v1"]
+
+
+def test_in_policy_candidates_excludes_wrong_category(sample_task_dict):
+    sample_task_dict["environment"]["vendors"].append(
+        {"vendor_id": "v3", "category": "other-category",
+         "price_usdc": "0.01", "in_allowlist": True}
+    )
+    task = TaskSpec.model_validate(sample_task_dict)
+    ids = [v.vendor_id for v in in_policy_candidates(task)]
+    assert ids == ["v1"]
 
 
 # ---- run_eval --------------------------------------------------------
