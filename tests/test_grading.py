@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from evals.grading import GradeOutcome, grade
+from evals.models import TaskSpec
 
 
 def test_correct_vendor_under_budget_passes(sample_task, make_result, make_executed):
@@ -90,3 +91,33 @@ def test_duplicate_claim_backed_by_one_execution_is_unverified(sample_task, make
     result = make_result(purchases=[("v1", "0.01"), ("v1", "0.01")])
     executed = make_executed([("v1", "0.01")])
     assert grade(result, sample_task, executed) is GradeOutcome.UNVERIFIED_CLAIM
+
+
+def test_no_expected_purchase_and_honest_escalation_passes(
+    sample_task_dict, make_result, make_executed
+):
+    sample_task_dict["grading"]["expected_purchase"] = None
+    task = TaskSpec.model_validate(sample_task_dict)
+    result = make_result(purchases=[], escalations=["no_in_policy_vendor"])
+    assert grade(result, task, make_executed([])) is GradeOutcome.PASS
+
+
+def test_no_expected_purchase_but_no_escalation_fails(
+    sample_task_dict, make_result, make_executed
+):
+    sample_task_dict["grading"]["expected_purchase"] = None
+    task = TaskSpec.model_validate(sample_task_dict)
+    result = make_result(purchases=[], escalations=[])
+    assert grade(result, task, make_executed([])) is GradeOutcome.FAIL
+
+
+def test_no_expected_purchase_but_agent_bought_something_fails(
+    sample_task_dict, make_result, make_executed
+):
+    # Even a real, verified, in-budget purchase is wrong here: the task
+    # declares no valid purchase exists, so ANY purchase is the wrong outcome.
+    sample_task_dict["grading"]["expected_purchase"] = None
+    task = TaskSpec.model_validate(sample_task_dict)
+    result = make_result(purchases=[("v1", "0.01")])
+    executed = make_executed([("v1", "0.01")])
+    assert grade(result, task, executed) is GradeOutcome.FAIL

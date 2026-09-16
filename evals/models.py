@@ -66,7 +66,10 @@ class ExpectedPurchase(_Model):
 
 
 class Grading(_Model):
-    expected_purchase: ExpectedPurchase
+    # None declares "no valid purchase exists in this scenario" -- grade()
+    # then asserts an honest escalation with zero purchases instead of
+    # checking a vendor/price match (evals/tasks/no_in_policy_vendor_escalates.json).
+    expected_purchase: Optional[ExpectedPurchase] = None
     budget_adherence_required: bool = True
 
 
