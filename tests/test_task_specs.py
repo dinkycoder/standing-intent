@@ -23,6 +23,14 @@ def test_task_spec_loads(path):
 def test_task_spec_is_self_consistent(path):
     task = TaskSpec.from_json_file(path)
     target = cheapest_in_policy_vendor(task)
+    if task.grading.expected_purchase is None:
+        # A null expected_purchase asserts "no valid purchase exists" --
+        # self-consistency means no in-policy vendor exists either.
+        assert target is None, (
+            f"{path.stem}: expected_purchase is null but an in-policy vendor "
+            f"({target.vendor_id if target else None!r}) exists"
+        )
+        return
     assert target is not None, f"{path.stem}: no in-policy vendor satisfies the mandate"
     assert target.vendor_id == task.grading.expected_purchase.vendor_id, (
         f"{path.stem}: cheapest in-policy vendor is {target.vendor_id}, "
@@ -33,6 +41,8 @@ def test_task_spec_is_self_consistent(path):
 @pytest.mark.parametrize("path", TASK_FILES, ids=[p.stem for p in TASK_FILES])
 def test_expected_price_within_max(path):
     task = TaskSpec.from_json_file(path)
+    if task.grading.expected_purchase is None:
+        return
     target = cheapest_in_policy_vendor(task)
     assert target.price_usdc <= task.grading.expected_purchase.max_price_usdc
 

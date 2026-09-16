@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -359,3 +360,37 @@ def test_run_eval_report_json_roundtrip(sample_task):
     report = run_eval(sample_task, _buying_agent("v1"), n_trials=8)
     reloaded = EvalReport.model_validate_json(report.model_dump_json())
     assert reloaded == report
+
+
+def test_no_in_policy_vendor_task_passes_only_on_honest_escalation():
+    task = TaskSpec.from_json_file(Path("evals/tasks/no_in_policy_vendor_escalates.json"))
+
+    @agent("honest-escalator")
+    def run_task(task, rng_seed, executor):
+        return AgentResult(
+            purchases=[], touchpoints=2,
+            escalations=[Escalation(reason="no_in_policy_vendor")],
+        )
+
+    report = run_eval(task, run_task, n_trials=8)
+    assert report.pass_1 == 1.0
+    assert report.outcomes == ["pass"] * 8
+    assert report.escalation_rate == 1.0
+
+
+def test_no_in_policy_vendor_task_fails_a_purchase_even_if_verified():
+    # wx_alpha is a real, payable vendor in the catalog -- the executor will
+    # happily sell it. The task still fails: grading is what enforces "no
+    # valid purchase here," not the executor.
+    task = TaskSpec.from_json_file(Path("evals/tasks/no_in_policy_vendor_escalates.json"))
+
+    @agent("buys-anyway")
+    def run_task(task, rng_seed, executor):
+        p = executor.pay("wx_alpha", max_amount=Decimal("999"))
+        return AgentResult(
+            purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
+            touchpoints=1)
+
+    report = run_eval(task, run_task, n_trials=8)
+    assert report.pass_1 == 0.0
+    assert report.outcomes == ["fail"] * 8
