@@ -23,7 +23,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from evals.agents.claude_planner import run_task as claude_planner_run_task
+from evals.agents.claude_planner import _MODEL, run_task as claude_planner_run_task
 from evals.harness import run_eval
 from evals.models import EvalReport, TaskSpec
 
@@ -48,7 +48,11 @@ def main(
         if task.environment.kind != "synthetic":
             continue
         report = run_eval(task, claude_planner_run_task, n_trials=n_trials)
-        out_path = out_dir / f"{report.task_id}_{report.date_utc}.json"
+        # agent_id is in the filename so this script and
+        # scripts/run_stub_evals.py cannot overwrite each other's report for
+        # the same task on the same day -- here that would silently destroy
+        # BILLED evidence.
+        out_path = out_dir / f"{report.task_id}_{report.agent_id}_{report.date_utc}.json"
         out_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
         reports.append(report)
 
@@ -82,6 +86,10 @@ def _print_table(reports: list[EvalReport]) -> None:
             f"{cost_col:>9}"
         )
     print()
+    # EvalReport.agent_id is the constant "claude-planner-v1" whatever
+    # PLANNER_MODEL points at, so the underlying model id is printed here --
+    # CLAUDE.md requires the model version be recorded alongside the seed.
+    print(f"Model: {_MODEL}")
     print(
         "LIVE RUN -- real, billed Claude API calls. Not gated in CI; run by "
         "hand and record results in a docs/week5-*.md file, matching Week "

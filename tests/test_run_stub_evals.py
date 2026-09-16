@@ -29,9 +29,12 @@ def test_writes_one_report_per_task(tmp_path):
             assert report.pass_k == {4: 0.0, 8: 0.0}
 
 
-def test_report_filenames_carry_task_id_and_date(tmp_path):
+def test_report_filenames_carry_task_id_agent_id_and_date(tmp_path):
+    # agent_id is part of the name: without it this script and
+    # scripts/run_claude_planner_evals.py write the same path for the same
+    # task on the same day, and the second run silently destroys the first.
     out = tmp_path / "results"
     reports = main(task_dir=Path("evals/tasks"), out_dir=out, n_trials=8)
     names = {p.name for p in out.glob("*.json")}
     for report in reports:
-        assert any(n.startswith(f"{report.task_id}_") and n.endswith(".json") for n in names)
+        assert f"{report.task_id}_{report.agent_id}_{report.date_utc}.json" in names

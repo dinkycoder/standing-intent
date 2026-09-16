@@ -31,10 +31,16 @@ jobs:
     #
     # The stub agent is expected to score pass^1 = 0%. That is correct, not a
     # failure. Do NOT add a pass-rate threshold, --min-pass flag, or an assert
-    # on report.pass_* to this job. The real gate activates when a non-stub
-    # agent is registered (Week 5+), at which point a threshold is added
-    # deliberately and recorded in the PR that adds it. See CLAUDE.md and
+    # on report.pass_* to this job. See CLAUDE.md and
     # docs/superpowers/specs/2026-09-02-eval-harness-design.md.
+    #
+    # A non-stub agent (claude-planner-v1) IS registered as of Week 5, and no
+    # gate was added for it -- deliberately. It makes real, billed Claude API
+    # calls and needs ANTHROPIC_API_KEY, which CI does not have, so gating on
+    # it would mean either a paid CI run per push or a secret in CI. It runs
+    # instead via a separate, manual, non-CI-gated script,
+    # scripts/run_claude_planner_evals.py, whose results are recorded by hand
+    # in docs/week5-claude-planner-live-run.md.
     needs: harness-tests
     runs-on: ubuntu-latest
     continue-on-error: true

@@ -43,7 +43,10 @@ def main(
         if task.environment.kind != "synthetic":
             continue
         report = run_eval(task, stub_run_task, n_trials=n_trials)
-        out_path = out_dir / f"{report.task_id}_{report.date_utc}.json"
+        # agent_id is in the filename so this script and
+        # scripts/run_claude_planner_evals.py cannot overwrite each other's
+        # report for the same task on the same day.
+        out_path = out_dir / f"{report.task_id}_{report.agent_id}_{report.date_utc}.json"
         out_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
         reports.append(report)
 
