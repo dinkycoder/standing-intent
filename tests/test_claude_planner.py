@@ -64,6 +64,66 @@ def test_llm_picks_a_vendor_and_buys_it(sample_task, monkeypatch):
     assert result.cost_usdc == Decimal("0.0002")
 
 
+class _NeverPaysExecutor:
+    def pay(self, target, *, max_amount):
+        raise AssertionError(f"executor.pay must not be called (target={target!r})")
+
+
+def test_vendor_id_outside_the_candidate_list_raises_before_paying(sample_task, monkeypatch):
+    # v2 is a REAL vendor in sample_task's catalog (SyntheticExecutor would
+    # happily look it up and sell it) but it is priced 0.08 over the 0.05 cap,
+    # so in_policy_candidates excludes it -- the LLM was never shown it. The
+    # membership check must stop the payment, not merely let grading fail the
+    # trial after the money moved.
+    assert [v.vendor_id for v in sample_task.environment.vendors] == ["v1", "v2"]
+
+    def _fake_ask(description, mandate, candidates):
+        assert [c.vendor_id for c in candidates] == ["v1"]
+        return _Decision(vendor_id="v2", escalate=False, reason=None), None
+
+    monkeypatch.setattr("evals.agents.claude_planner._ask_claude", _fake_ask)
+
+    with pytest.raises(ValueError, match="not among the 1 offered candidate"):
+        run_task(sample_task, 0, _NeverPaysExecutor())
+
+
+def test_hallucinated_vendor_id_raises_value_error_not_key_error(sample_task, monkeypatch):
+    # An id in no catalog at all: SyntheticExecutor would raise a bare KeyError
+    # that aborts the entire n-trial run. Must be a named ValueError instead.
+    def _fake_ask(description, mandate, candidates):
+        return _Decision(vendor_id="v1-premium", escalate=False, reason=None), None
+
+    monkeypatch.setattr("evals.agents.claude_planner._ask_claude", _fake_ask)
+
+    with pytest.raises(ValueError, match="'v1-premium'"):
+        run_task(sample_task, 0, _NeverPaysExecutor())
+
+
+def test_pays_the_candidate_url_when_the_vendor_has_one(sample_task_dict, monkeypatch):
+    # RealX402Executor.pay() keys off url, SyntheticExecutor.pay() off
+    # vendor_id. The agent passes url when the spec carries one.
+    sample_task_dict["environment"]["vendors"][0]["url"] = "https://example.test/wx"
+    task = TaskSpec.model_validate(sample_task_dict)
+
+    paid: list[str] = []
+
+    class _RecordingExecutor:
+        def pay(self, target, *, max_amount):
+            paid.append(target)
+            return ExecutedPurchase(
+                vendor_id="v1", url=target, amount_paid=Decimal("0.01"),
+                pay_to=None, tx_hash=None, verified=True, resource=None)
+
+    def _fake_ask(description, mandate, candidates):
+        return _Decision(vendor_id="v1", escalate=False, reason=None), None
+
+    monkeypatch.setattr("evals.agents.claude_planner._ask_claude", _fake_ask)
+
+    result = run_task(task, 0, _RecordingExecutor())
+    assert paid == ["https://example.test/wx"]
+    assert result.purchases[0] == Purchase(vendor_id="v1", price_usdc=Decimal("0.01"))
+
+
 def test_llm_escalates_with_a_reason(sample_task, monkeypatch):
     usage = {"input_tokens": 50, "output_tokens": 10, "total_tokens": 60}
 

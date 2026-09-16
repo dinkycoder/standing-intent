@@ -6,8 +6,10 @@ See docs/superpowers/specs/2026-09-15-week5-planner-v1-design.md.
 Policy enforcement (category, budget, allowlist) happens entirely in
 evals.harness.in_policy_candidates -- the same function
 evals.harness.cheapest_in_policy_vendor calls for grading's own target-vendor
-metric. The LLM below is never shown a vendor that function excludes, so "the
-LLM picked an out-of-policy vendor" is structurally impossible, not just
+metric. The LLM below is never shown a vendor that function excludes, and
+run_task re-checks the returned vendor_id against that same candidate list
+before it spends anything -- so "the LLM picked an out-of-policy vendor" is
+structurally impossible (no payment can be issued for one), not just
 tested-for.
 """
 
@@ -77,7 +79,29 @@ def run_task(task: TaskSpec, rng_seed: int, executor: PaymentExecutor) -> AgentR
             trace=[f"LLM escalated: {decision.reason}"],
         )
 
-    executed = executor.pay(decision.vendor_id, max_amount=task.mandate.budget_cap_usdc)
+    # decision.vendor_id is free-form model output. Membership in `candidates`
+    # is what makes this module's "structurally impossible" claim true: without
+    # it, a hallucinated id reaches SyntheticExecutor as a raw KeyError that
+    # aborts the whole n-trial run, and a real-but-filtered-out id (the
+    # executor is keyed off the FULL catalog, not the candidate set) gets PAID
+    # before grading ever sees it -- on a real_x402 environment, on-chain.
+    # Raised, not escalated: out-of-contract model output is a bug, handled the
+    # same way as _ask_claude's parsing_error, never downgraded into a grade.
+    by_id = {c.vendor_id: c for c in candidates}
+    chosen = by_id.get(decision.vendor_id)
+    if chosen is None:
+        raise ValueError(
+            f"LLM returned vendor_id {decision.vendor_id!r}, not among the "
+            f"{len(candidates)} offered candidate(s): "
+            f"{[c.vendor_id for c in candidates]}"
+        )
+    # SyntheticExecutor.pay() takes a vendor_id; RealX402Executor.pay() takes a
+    # URL. Vendor.url is set exactly on the specs that need the latter, so the
+    # url-else-vendor_id target satisfies both without the agent knowing which
+    # executor it was handed.
+    executed = executor.pay(
+        chosen.url or chosen.vendor_id, max_amount=task.mandate.budget_cap_usdc
+    )
     return AgentResult(
         purchases=[Purchase(vendor_id=executed.vendor_id, price_usdc=executed.amount_paid)],
         touchpoints=1,
