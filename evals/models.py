@@ -128,8 +128,11 @@ class EvalReport(_Model):
     pass_k_ci: dict[int, tuple[float, float]]
     touchpoints_per_basket: float
     budget_violations: int
-    best_price_capture_rate: float
-    best_price_capture_rate_ci: tuple[float, float]
+    # None means "not applicable": the task has no in-policy vendor to capture
+    # (cheapest_in_policy_vendor is None), so a 0.0 here would be a metric that
+    # looks measured and is not. Same convention as cost_per_completed_tx_usdc.
+    best_price_capture_rate: Optional[float] = None
+    best_price_capture_rate_ci: Optional[tuple[float, float]] = None
     cost_per_completed_tx_usdc: Optional[UsdcAmount]
     escalation_rate: float
     escalation_reasons: dict[str, int]

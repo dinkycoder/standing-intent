@@ -378,6 +378,37 @@ def test_no_in_policy_vendor_task_passes_only_on_honest_escalation():
     assert report.escalation_rate == 1.0
 
 
+def test_no_in_policy_vendor_task_reports_best_price_capture_as_none():
+    # No in-policy vendor exists, so "did it capture the best price" is not a
+    # question this task asks. A perfect run must report the metric as absent,
+    # not as 0.0 with a Wilson CI around it -- that reads as a measured total
+    # capture failure on a task the agent scored 8/8 on.
+    task = TaskSpec.from_json_file(Path("evals/tasks/no_in_policy_vendor_escalates.json"))
+    assert cheapest_in_policy_vendor(task) is None
+
+    @agent("honest-escalator")
+    def run_task(task, rng_seed, executor):
+        return AgentResult(
+            purchases=[], touchpoints=2,
+            escalations=[Escalation(reason="no_in_policy_vendor")],
+        )
+
+    report = run_eval(task, run_task, n_trials=8)
+    assert report.pass_1 == 1.0
+    assert report.best_price_capture_rate is None
+    assert report.best_price_capture_rate_ci is None
+    # Survives the JSON round-trip the scripts write to disk.
+    assert EvalReport.model_validate_json(report.model_dump_json()) == report
+
+
+def test_task_with_an_in_policy_target_still_reports_a_float_capture_rate(sample_task):
+    # The None is scoped to "no target exists" -- a normal task keeps a real
+    # number, so the not-applicable case cannot quietly swallow a real 0%.
+    report = run_eval(sample_task, _buying_agent("v2"), n_trials=8)
+    assert report.best_price_capture_rate == 0.0
+    assert report.best_price_capture_rate_ci is not None
+
+
 def test_no_in_policy_vendor_task_fails_a_purchase_even_if_verified():
     # wx_alpha is a real, payable vendor in the catalog -- the executor will
     # happily sell it. The task still fails: grading is what enforces "no

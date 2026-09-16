@@ -174,8 +174,14 @@ def run_eval(
         },
         touchpoints_per_basket=sum(r.touchpoints for r in results) / n_trials,
         budget_violations=budget_violations,
-        best_price_capture_rate=captures / n_trials,
-        best_price_capture_rate_ci=wilson_interval(captures, n_trials),
+        # target is None => no in-policy vendor exists, so "best-price capture"
+        # is undefined for this task, not 0%. Reporting 0.0 (with a CI around
+        # it) would make a perfect run of no_in_policy_vendor_escalates look
+        # like a total capture failure.
+        best_price_capture_rate=(captures / n_trials) if target is not None else None,
+        best_price_capture_rate_ci=(
+            wilson_interval(captures, n_trials) if target is not None else None
+        ),
         cost_per_completed_tx_usdc=cost_per_completed,
         escalation_rate=escalated_trials / n_trials,
         escalation_reasons=dict(reasons),
