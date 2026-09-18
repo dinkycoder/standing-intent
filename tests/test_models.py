@@ -27,6 +27,20 @@ def test_bool_money_is_rejected(sample_task_dict):
         TaskSpec.model_validate(sample_task_dict)
 
 
+def test_reference_price_usdc_rejects_float(sample_task_dict):
+    sample_task_dict["environment"]["vendors"][0]["reference_price_usdc"] = 0.01
+    with pytest.raises(ValidationError):
+        TaskSpec.model_validate(sample_task_dict)
+
+
+def test_reference_price_usdc_defaults_to_none(sample_task):
+    assert sample_task.environment.vendors[0].reference_price_usdc is None
+
+
+def test_price_sanity_multiplier_defaults_to_none(sample_task):
+    assert sample_task.mandate.price_sanity_multiplier is None
+
+
 def test_missing_required_field_raises(sample_task_dict):
     del sample_task_dict["grading"]
     with pytest.raises(ValidationError):

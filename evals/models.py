@@ -50,6 +50,11 @@ class Vendor(_Model):
     price_usdc: UsdcAmount
     in_allowlist: bool = True
     url: Optional[str] = None
+    # A fact about this catalog entry (what it normally charges), the same
+    # way price_usdc is -- consumed by evals.guardrail.check_purchase's
+    # price-sanity check. None means no baseline is declared for this
+    # vendor; the check is a no-op.
+    reference_price_usdc: Optional[UsdcAmount] = None
 
 
 class Mandate(_Model):
@@ -58,6 +63,12 @@ class Mandate(_Model):
     vendor_allowlist: Optional[list[str]] = None
     # A quality score, not a USDC amount — no float-precision rule, just non-negative.
     quality_threshold: Optional[Decimal] = Field(default=None, ge=0)
+    # How much a vendor's price may exceed its own reference_price_usdc
+    # before evals.guardrail.check_purchase treats it as an anomaly (e.g.
+    # 2 means "up to 2x the reference is fine"). A task-level policy choice,
+    # the same way budget_cap_usdc is -- not a per-vendor field. None means
+    # no price-sanity check applies to this mandate at all.
+    price_sanity_multiplier: Optional[Decimal] = Field(default=None, gt=0)
 
 
 class ExpectedPurchase(_Model):
