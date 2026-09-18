@@ -281,12 +281,21 @@ the existing test continuing to pass.
   agent escalates with the right reason rather than crashing.
 - `evals/tasks/price_anomaly_escalates.json` is exercised the same way
   `no_in_policy_vendor_escalates.json` already is in
-  `tests/test_task_specs.py`'s parametrized "all tasks" tests (which already
-  branch on `expected_purchase is None`, so no further changes needed there)
-  and in `tests/test_run_stub_evals.py` (the stub's blanket escalation
-  happens to pass this task too, for the same "right state, not-yet-a-real-
-  agent-decision" reason already documented for
-  `no_in_policy_vendor_escalates`).
+  `tests/test_run_stub_evals.py` (the stub's blanket escalation happens to
+  pass this task too, for the same "right state, not-yet-a-real-agent-
+  decision" reason already documented for `no_in_policy_vendor_escalates`).
+  `tests/test_task_specs.py`'s `test_task_spec_is_self_consistent` needs a
+  real update, not just automatic coverage from its existing
+  parametrization: its current invariant ("`expected_purchase is null`
+  implies `cheapest_in_policy_vendor` is `None`") is true for
+  `no_in_policy_vendor_escalates` but false for this task — a genuinely
+  in-policy vendor exists here, it's just price-anomalous, which
+  `cheapest_in_policy_vendor` has no way to know about. The test needs a
+  second branch: when a target exists despite a null `expected_purchase`,
+  prove it's anomalous by asserting `guardrail.check_purchase(task,
+  target.vendor_id)` raises `PriceAnomaly` — reusing the same function
+  `claude_planner.py` calls, rather than re-deriving the price-sanity math
+  a second time in the test.
 - Offline, CI-run, no network calls anywhere in this week's work — none of
   it touches `claude_planner.py`'s LLM call path except the one new
   monkeypatched test case above.
