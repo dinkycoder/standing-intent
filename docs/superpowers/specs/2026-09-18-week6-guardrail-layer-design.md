@@ -332,6 +332,26 @@ the existing test continuing to pass.
   a real payment atomic with a policy check the way the on-chain Spend
   Permission cap would. That gap is exactly the "on-chain enforcement" half
   this spec defers.
+- **`claude_planner.py` escalates on `PriceAnomaly` without checking whether
+  a *different*, non-anomalous in-policy candidate exists.** Found during
+  final review: if a mandate ever has multiple in-policy candidates and only
+  one is price-anomalous, a correct agent should buy the non-anomalous one,
+  not escalate — an avoidable escalation is an avoidable human touchpoint,
+  the one metric this whole project is judged on. Today's `run_task` doesn't
+  do this; it returns the escalation immediately on the first anomaly it
+  hits. No shipped task exercises this gap (`price_anomaly_escalates.json`
+  has exactly one candidate, by design), so nothing is currently broken —
+  but it's a real, accepted gap, not a hidden one. The two ways to close it
+  both cost more than a fix-wave patch and are deliberately deferred rather
+  than rushed: (a) have `run_task` retry over the remaining candidates when
+  one is anomalous, or (b) fold price-sanity into a hard pre-filter merged
+  into `in_policy_candidates` itself, the same way category/budget/allowlist
+  already are. Option (b) is the more principled fix, but it directly
+  contradicts this spec's own decision above ("the LLM is never asked to
+  reason about price sanity itself") and would change `in_policy_candidates`'s
+  semantics — which grading's own `cheapest_in_policy_vendor` also depends
+  on — so it needs its own design pass, not a patch. Revisit when a task
+  with a genuine anomalous-plus-normal candidate mix is actually needed.
 
 ## Out of scope (deferred, not forgotten)
 
