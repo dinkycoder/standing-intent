@@ -133,6 +133,13 @@ def run_eval(
     settled = [e.tx_hash for ex in executed_per_trial for e in ex if e.tx_hash]
 
     target = cheapest_in_policy_vendor(task)
+    # Best-price capture is only a meaningful question when the task's own
+    # grading contract says a real purchase should happen at all. A task can
+    # have a real in-policy vendor (target is not None) and still correctly
+    # expect zero purchases -- e.g. price_anomaly_escalates, where the sole
+    # in-policy vendor is anomalously priced. Guarding on target alone would
+    # report a misleading 0.0 for a perfect escalation on such a task.
+    metric_applicable = target is not None and task.grading.expected_purchase is not None
     captures = sum(
         1
         for ex, o in zip(executed_per_trial, outcomes)
@@ -181,13 +188,15 @@ def run_eval(
         },
         touchpoints_per_basket=sum(r.touchpoints for r in results) / n_trials,
         budget_violations=budget_violations,
-        # target is None => no in-policy vendor exists, so "best-price capture"
-        # is undefined for this task, not 0%. Reporting 0.0 (with a CI around
-        # it) would make a perfect run of no_in_policy_vendor_escalates look
-        # like a total capture failure.
-        best_price_capture_rate=(captures / n_trials) if target is not None else None,
+        # metric_applicable is False when either no in-policy vendor exists
+        # (no_in_policy_vendor_escalates) or the task's grading contract itself
+        # expects zero purchases (price_anomaly_escalates) -- in both cases
+        # "best-price capture" is undefined for this task, not 0%. Reporting
+        # 0.0 (with a CI around it) would make a perfect escalation on either
+        # task look like a total capture failure.
+        best_price_capture_rate=(captures / n_trials) if metric_applicable else None,
         best_price_capture_rate_ci=(
-            wilson_interval(captures, n_trials) if target is not None else None
+            wilson_interval(captures, n_trials) if metric_applicable else None
         ),
         cost_per_completed_tx_usdc=cost_per_completed,
         escalation_rate=escalated_trials / n_trials,

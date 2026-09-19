@@ -1,10 +1,10 @@
 """Run the stub agent against every shipped task spec and write EvalReports.
 
 REPORTING ONLY. The stub is expected to score pass^1 = 0, except on
-no_in_policy_vendor_escalates, where its blanket escalation happens to match
-that task's correct terminal state (see grading.py's expected_purchase=None
-branch). This script never fails the build and must never grow a pass-rate
-threshold — see CLAUDE.md and
+no_in_policy_vendor_escalates and price_anomaly_escalates, where its blanket
+escalation happens to match each task's correct terminal state (see
+grading.py's expected_purchase=None branch). This script never fails the
+build and must never grow a pass-rate threshold — see CLAUDE.md and
 docs/superpowers/specs/2026-09-02-eval-harness-design.md. The gate activates
 when a real agent is registered (Week 5+).
 """

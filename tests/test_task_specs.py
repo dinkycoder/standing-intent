@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from evals import guardrail
-from evals.harness import cheapest_in_policy_vendor
+from evals.harness import cheapest_in_policy_vendor, in_policy_candidates
 from evals.models import TaskSpec
 
 TASK_DIR = Path("evals/tasks")
@@ -31,9 +31,12 @@ def test_task_spec_is_self_consistent(path):
         # An in-policy vendor DOES exist, so a null expected_purchase must be
         # explained by a different reason a purchase is invalid -- today,
         # only a price anomaly on the sole target (price_anomaly_escalates).
-        # Prove it's genuinely anomalous, not just an inconsistent task spec.
-        with pytest.raises(guardrail.PriceAnomaly):
-            guardrail.check_purchase(task, target.vendor_id)
+        # Every in-policy candidate must be anomalous, not just the cheapest --
+        # a non-anomalous alternative would let a correct agent buy it instead,
+        # making a null expected_purchase genuinely wrong, not just unproven.
+        for candidate in in_policy_candidates(task):
+            with pytest.raises(guardrail.PriceAnomaly):
+                guardrail.check_purchase(task, candidate.vendor_id)
         return
     assert target is not None, f"{path.stem}: no in-policy vendor satisfies the mandate"
     assert target.vendor_id == task.grading.expected_purchase.vendor_id, (

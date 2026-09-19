@@ -10,7 +10,7 @@ from evals.agents.claude_planner import (
     run_task,
 )
 from evals.executor import ExecutedPurchase
-from evals.guardrail import PriceAnomaly, VendorNotOffered
+from evals.guardrail import VendorNotOffered
 from evals.models import Mandate, Purchase, TaskSpec, Vendor
 
 

@@ -435,6 +435,26 @@ def test_no_in_policy_vendor_task_reports_best_price_capture_as_none():
     assert EvalReport.model_validate_json(report.model_dump_json()) == report
 
 
+def test_price_anomaly_task_reports_best_price_capture_as_none():
+    # Unlike no_in_policy_vendor_escalates, a real in-policy vendor (wx_spike)
+    # DOES exist here -- it's just anomalously priced. best_price_capture_rate
+    # must still report None, not a misleading 0.0, on a perfect run.
+    task = TaskSpec.from_json_file(Path("evals/tasks/price_anomaly_escalates.json"))
+    assert cheapest_in_policy_vendor(task) is not None
+
+    @agent("honest-escalator")
+    def run_task(task, rng_seed, executor):
+        return AgentResult(
+            purchases=[], touchpoints=2,
+            escalations=[Escalation(reason="price_anomaly")],
+        )
+
+    report = run_eval(task, run_task, n_trials=8)
+    assert report.pass_1 == 1.0
+    assert report.best_price_capture_rate is None
+    assert report.best_price_capture_rate_ci is None
+
+
 def test_task_with_an_in_policy_target_still_reports_a_float_capture_rate(sample_task):
     # The None is scoped to "no target exists" -- a normal task keeps a real
     # number, so the not-applicable case cannot quietly swallow a real 0%.
