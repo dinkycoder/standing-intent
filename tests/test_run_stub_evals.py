@@ -17,12 +17,13 @@ def test_writes_one_report_per_task(tmp_path):
         assert report.budget_violations == 0
         assert report.escalation_rate == 1.0
         assert report.escalation_reasons == {"not_implemented": 8}
-        if report.task_id == "no_in_policy_vendor_escalates":
+        if report.task_id in ("no_in_policy_vendor_escalates", "price_anomaly_escalates"):
             # The stub always escalates with zero purchases -- which happens
-            # to be the correct terminal state for this one task (no valid
-            # vendor exists), so it passes here for the right STATE but the
-            # wrong REASON: it never distinguishes a real vendor set from an
-            # empty one. See the Week-5 design spec's "Known limitations".
+            # to be the correct terminal state for both of these tasks (no
+            # valid purchase exists), so it passes here for the right STATE
+            # but the wrong REASON: it never distinguishes a real vendor set
+            # from an empty one, nor a genuine anomaly from a normal offer.
+            # See the Week-5 design spec's "Known limitations".
             assert report.pass_1 == 1.0
         else:
             assert report.pass_1 == 0.0
