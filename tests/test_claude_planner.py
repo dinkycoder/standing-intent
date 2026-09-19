@@ -10,6 +10,7 @@ from evals.agents.claude_planner import (
     run_task,
 )
 from evals.executor import ExecutedPurchase
+from evals.guardrail import PriceAnomaly, VendorNotOffered
 from evals.models import Mandate, Purchase, TaskSpec, Vendor
 
 
@@ -83,20 +84,40 @@ def test_vendor_id_outside_the_candidate_list_raises_before_paying(sample_task, 
 
     monkeypatch.setattr("evals.agents.claude_planner._ask_claude", _fake_ask)
 
-    with pytest.raises(ValueError, match="not among the 1 offered candidate"):
+    with pytest.raises(VendorNotOffered, match="not among the 1 offered candidate"):
         run_task(sample_task, 0, _NeverPaysExecutor())
 
 
-def test_hallucinated_vendor_id_raises_value_error_not_key_error(sample_task, monkeypatch):
+def test_hallucinated_vendor_id_raises_vendor_not_offered_not_key_error(sample_task, monkeypatch):
     # An id in no catalog at all: SyntheticExecutor would raise a bare KeyError
-    # that aborts the entire n-trial run. Must be a named ValueError instead.
+    # that aborts the entire n-trial run. Must be a named guardrail exception
+    # instead.
     def _fake_ask(description, mandate, candidates):
         return _Decision(vendor_id="v1-premium", escalate=False, reason=None), None
 
     monkeypatch.setattr("evals.agents.claude_planner._ask_claude", _fake_ask)
 
-    with pytest.raises(ValueError, match="'v1-premium'"):
+    with pytest.raises(VendorNotOffered, match="'v1-premium'"):
         run_task(sample_task, 0, _NeverPaysExecutor())
+
+
+def test_price_anomaly_escalates_instead_of_buying(sample_task_dict, monkeypatch):
+    sample_task_dict["mandate"]["price_sanity_multiplier"] = "2"
+    sample_task_dict["environment"]["vendors"][0]["reference_price_usdc"] = "0.001"
+    # v1's price is 0.01; 2x its reference (0.001) is 0.002 -- 0.01 > 0.002,
+    # an anomaly.
+    task = TaskSpec.model_validate(sample_task_dict)
+
+    def _fake_ask(description, mandate, candidates):
+        return _Decision(vendor_id="v1", escalate=False, reason=None), None
+
+    monkeypatch.setattr("evals.agents.claude_planner._ask_claude", _fake_ask)
+
+    result = run_task(task, 0, _NeverPaysExecutor())
+    assert result.purchases == []
+    assert result.touchpoints == 2
+    assert [e.reason for e in result.escalations] == ["price_anomaly"]
+    assert result.cost_usdc == Decimal("0")
 
 
 def test_pays_the_candidate_url_when_the_vendor_has_one(sample_task_dict, monkeypatch):

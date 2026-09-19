@@ -1,16 +1,19 @@
 """claude-planner-v1: a single structured LLM call over a deterministically
 pre-filtered candidate list.
 
-See docs/superpowers/specs/2026-09-15-week5-planner-v1-design.md.
+See docs/superpowers/specs/2026-09-15-week5-planner-v1-design.md and
+docs/superpowers/specs/2026-09-18-week6-guardrail-layer-design.md.
 
 Policy enforcement (category, budget, allowlist) happens entirely in
 evals.harness.in_policy_candidates -- the same function
 evals.harness.cheapest_in_policy_vendor calls for grading's own target-vendor
 metric. The LLM below is never shown a vendor that function excludes, and
-run_task re-checks the returned vendor_id against that same candidate list
+run_task re-checks the returned vendor_id via evals.guardrail.check_purchase
 before it spends anything -- so "the LLM picked an out-of-policy vendor" is
 structurally impossible (no payment can be issued for one), not just
-tested-for.
+tested-for. check_purchase also enforces price-sanity (Week 6): a candidate
+priced far above its own declared reference_price_usdc is caught the same
+way, before any payment is attempted.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from evals.agent_protocol import agent
 from evals.executor import PaymentExecutor
+from evals.guardrail import PriceAnomaly, check_purchase
 from evals.harness import in_policy_candidates
 from evals.models import AgentResult, Escalation, Mandate, Purchase, TaskSpec, Vendor
 
@@ -79,22 +83,26 @@ def run_task(task: TaskSpec, rng_seed: int, executor: PaymentExecutor) -> AgentR
             trace=[f"LLM escalated: {decision.reason}"],
         )
 
-    # decision.vendor_id is free-form model output. Membership in `candidates`
-    # is what makes this module's "structurally impossible" claim true: without
-    # it, a hallucinated id reaches SyntheticExecutor as a raw KeyError that
-    # aborts the whole n-trial run, and a real-but-filtered-out id (the
-    # executor is keyed off the FULL catalog, not the candidate set) gets PAID
-    # before grading ever sees it -- on a real_x402 environment, on-chain.
-    # Raised, not escalated: out-of-contract model output is a bug, handled the
-    # same way as _ask_claude's parsing_error, never downgraded into a grade.
-    by_id = {c.vendor_id: c for c in candidates}
-    chosen = by_id.get(decision.vendor_id)
-    if chosen is None:
-        raise ValueError(
-            f"LLM returned vendor_id {decision.vendor_id!r}, not among the "
-            f"{len(candidates)} offered candidate(s): "
-            f"{[c.vendor_id for c in candidates]}"
+    # decision.vendor_id is free-form model output. check_purchase re-checking
+    # it against in_policy_candidates is what makes this module's
+    # "structurally impossible" claim true: without it, a hallucinated id
+    # reaches SyntheticExecutor as a raw KeyError that aborts the whole
+    # n-trial run, and a real-but-filtered-out id (the executor is keyed off
+    # the FULL catalog, not the candidate set) gets PAID before grading ever
+    # sees it -- on a real_x402 environment, on-chain.
+    try:
+        chosen = check_purchase(task, decision.vendor_id)
+    except PriceAnomaly:
+        return AgentResult(
+            purchases=[],
+            touchpoints=2,
+            escalations=[Escalation(reason="price_anomaly")],
+            cost_usdc=cost,
+            trace=["price anomaly detected; escalated"],
         )
+    # VendorNotOffered is not caught: out-of-contract model output is a bug,
+    # handled the same way as _ask_claude's parsing_error, never downgraded
+    # into a grade.
     # SyntheticExecutor.pay() takes a vendor_id; RealX402Executor.pay() takes a
     # URL. Vendor.url is set exactly on the specs that need the latter, so the
     # url-else-vendor_id target satisfies both without the agent knowing which
