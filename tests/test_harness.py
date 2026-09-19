@@ -5,6 +5,7 @@ import pytest
 
 from evals.agent_protocol import agent
 from evals.executor import ExecutedPurchase
+from evals.guardrail import DuplicatePurchaseAttempt
 from evals.harness import (
     cheapest_in_policy_vendor,
     in_policy_candidates,
@@ -193,6 +194,39 @@ def test_recording_view_exposes_only_pay(sample_task):
     run_eval(sample_task, run_task, n_trials=1)
     assert seen["attrs"] == ["pay"]
     assert seen["has_calls"] is False
+
+
+def test_pay_same_vendor_twice_in_one_trial_raises(sample_task):
+    @agent("double-buyer")
+    def run_task(task, rng_seed, executor):
+        executor.pay("v1", max_amount=Decimal("999"))
+        executor.pay("v1", max_amount=Decimal("999"))
+        return AgentResult(purchases=[], touchpoints=1)
+
+    with pytest.raises(DuplicatePurchaseAttempt, match="'v1'"):
+        run_eval(sample_task, run_task, n_trials=1)
+
+
+def test_pay_two_different_vendors_in_one_trial_still_succeeds(sample_task):
+    # Guards against a regression toward "any second payment raises" -- the
+    # design rejected during brainstorming. Two DIFFERENT vendors paid in
+    # one trial is an existing, deliberately-tested scenario
+    # (test_overcap_execution_and_misreport_counts_both) and must keep
+    # working unmodified.
+    @agent("two-vendor-buyer")
+    def run_task(task, rng_seed, executor):
+        a = executor.pay("v1", max_amount=Decimal("999"))
+        b = executor.pay("v2", max_amount=Decimal("999"))
+        return AgentResult(
+            purchases=[
+                Purchase(vendor_id=a.vendor_id, price_usdc=a.amount_paid),
+                Purchase(vendor_id=b.vendor_id, price_usdc=b.amount_paid),
+            ],
+            touchpoints=1,
+        )
+
+    report = run_eval(sample_task, run_task, n_trials=1)
+    assert isinstance(report, EvalReport)
 
 
 def test_run_eval_overspend_reports_budget_violations_and_zero_pass(sample_task_dict):

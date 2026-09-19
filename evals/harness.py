@@ -16,6 +16,7 @@ from evals.agent_protocol import AgentFn, require_agent_id
 from evals.environments import resolve_executor
 from evals.executor import ExecutedPurchase
 from evals.grading import GradeOutcome, grade
+from evals.guardrail import check_not_duplicate
 from evals.models import AgentResult, EvalReport, TaskSpec, Vendor
 from evals.stats import pass_k_interval, wilson_interval
 
@@ -29,11 +30,17 @@ def _recording_view(inner) -> "tuple[object, list[ExecutedPurchase]]":
     is a closure local the agent has no attribute path to -- the record is not
     the agent's to write (M-3). grading reconciles the agent's self-report
     against this list.
+
+    check_not_duplicate runs here, unconditionally, for every agent -- the
+    one guardrail check that is a hard gate rather than an agent-side opt-in
+    (see evals.guardrail's module docstring): it needs this closure's own
+    verified `calls` list, which an agent has no way to fake.
     """
     calls: list[ExecutedPurchase] = []
 
     class _View:
         def pay(self, target, *, max_amount):
+            check_not_duplicate(target, calls)
             p = inner.pay(target, max_amount=max_amount)
             calls.append(p)
             return p
