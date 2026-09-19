@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from evals.models import EvalReport
 
 # Uniform prior: no vendor is assumed reliable or unreliable before any
@@ -35,12 +37,23 @@ def posterior_mean(alpha: float, beta: float) -> float:
     return alpha / (alpha + beta)
 
 
-def vendor_reliability_from_reports(report_paths: "list[Path]") -> dict[str, dict]:
+def vendor_reliability_from_reports(report_paths: list[Path]) -> dict[str, dict]:
     """Folds every EvalReport.vendor_outcomes entry in report_paths through
-    beta_update per vendor_id, starting from the uniform prior."""
+    beta_update per vendor_id, starting from the uniform prior.
+
+    evals/results/ accumulates reports from every week this project has
+    shipped, written by whatever EvalReport schema existed at the time --
+    an old report missing a field the CURRENT schema requires (discovered
+    live: pre-Week-4 reports predate pass_1_ci/pass_k_ci) must not crash
+    the whole aggregation with no indication of which file was the problem.
+    Skipped files are printed by name, not silently dropped."""
     posteriors: dict[str, tuple[float, float]] = {}
     for path in report_paths:
-        report = EvalReport.model_validate_json(Path(path).read_text(encoding="utf-8"))
+        try:
+            report = EvalReport.model_validate_json(Path(path).read_text(encoding="utf-8"))
+        except ValidationError as exc:
+            print(f"skipping {path}: does not match the current EvalReport schema ({exc})")
+            continue
         for vendor_id, outcome in report.vendor_outcomes.items():
             alpha, beta = posteriors.get(vendor_id, (_PRIOR_ALPHA, _PRIOR_BETA))
             for _ in range(outcome.successes):

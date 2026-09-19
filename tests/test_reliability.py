@@ -79,3 +79,21 @@ def test_vendor_reliability_from_reports_keeps_vendors_separate(tmp_path):
 
 def test_vendor_reliability_from_reports_empty_list_returns_empty_dict():
     assert vendor_reliability_from_reports([]) == {}
+
+
+def test_vendor_reliability_from_reports_skips_a_file_with_an_old_incompatible_schema(
+    tmp_path, capsys
+):
+    # evals/results/ accumulates reports from every schema this project has
+    # shipped -- discovered live: a pre-Week-4 report missing pass_1_ci/
+    # pass_k_ci (both required, no default) must not crash aggregation of
+    # every OTHER, valid file in the same directory.
+    good_path = tmp_path / "good.json"
+    _write_report(good_path, {"v1": VendorOutcome(successes=2, failures=0)})
+    bad_path = tmp_path / "bad_old_schema.json"
+    bad_path.write_text('{"task_id": "old", "agent_id": "a"}', encoding="utf-8")
+
+    result = vendor_reliability_from_reports([bad_path, good_path])
+
+    assert result["v1"]["successes"] == 2
+    assert "bad_old_schema.json" in capsys.readouterr().out
