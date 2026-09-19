@@ -48,8 +48,15 @@ def _print_table(scores: dict[str, dict]) -> None:
             lo, hi = wilson_interval(s["successes"], s["n_observations"])
         else:
             lo, hi = (s["mean"], s["mean"])
-        print(f"{vendor_id:<24} {s['mean']:>8.3f} [{lo:.3f}, {hi:.3f}]         {s['n_observations']:>5d}")
-        if s["mean"] < _SUSPICIOUS_MEAN_THRESHOLD:
+        ci_text = f"[{lo:.3f}, {hi:.3f}]"
+        print(f"{vendor_id:<24} {s['mean']:>8.3f} {ci_text:>20} {s['n_observations']:>5d}")
+        # A vendor counts as "suspiciously reliable" from its raw evidence
+        # (zero failures, or successes swamping failures 9:1), not from the
+        # Beta(1,1) posterior mean -- the uniform prior pulls small samples
+        # toward 0.5, so e.g. 7 successes/0 failures gives mean 8/9 ~= 0.889,
+        # which would wrongly fall BELOW a flat 0.9 mean threshold even
+        # though it's a perfect small record that should trigger the caveat.
+        if not (s["failures"] == 0 or s["successes"] >= 9 * s["failures"]):
             all_high = False
     print()
     if all_high:

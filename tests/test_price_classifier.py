@@ -66,6 +66,18 @@ def test_save_and_load_round_trip(tmp_path):
     assert loaded.predict_proba(features[0]) == clf.predict_proba(features[0])
 
 
+def test_committed_artifact_loads_and_predicts_sensibly():
+    clf = load()  # DEFAULT_ARTIFACT_PATH -- the real, committed file
+    base = {"reference_price_ratio": 1.0, "reference_price_missing": False,
+            "budget_utilization": 0.3}
+    cheap = clf.predict_proba({**base, "price_zscore_in_category": -2.0})
+    dear = clf.predict_proba({**base, "price_zscore_in_category": 3.0})
+    assert set(cheap) == {"accept", "escalate", "reject"}
+    assert abs(sum(cheap.values()) - 1.0) < 1e-9
+    assert cheap["accept"] > dear["accept"]
+    assert dear["reject"] > cheap["reject"]
+
+
 def test_full_train_test_run_beats_the_majority_class_baseline():
     features, labels = generate_offers(n=5000, seed=42)
     x_train, x_test, y_train, y_test = train_test_split(

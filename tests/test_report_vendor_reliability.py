@@ -29,3 +29,14 @@ def test_main_aggregates_reports_in_the_given_directory(tmp_path):
 
 def test_main_returns_empty_dict_for_a_directory_with_no_reports(tmp_path):
     assert main(results_dir=tmp_path) == {}
+
+
+def test_caveat_fires_for_a_small_perfect_record_despite_low_posterior_mean(tmp_path, capsys):
+    # 7 successes, 0 failures -> posterior mean 8/9 ~= 0.889, below the OLD
+    # flat 0.9 threshold this test guards against regressing to.
+    _write_report(tmp_path / "r1.json", {"v1": VendorOutcome(successes=7, failures=0)})
+
+    main(results_dir=tmp_path)
+
+    captured = capsys.readouterr()
+    assert "near-100% reliability" in captured.out

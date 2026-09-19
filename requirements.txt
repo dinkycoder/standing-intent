@@ -4,3 +4,6 @@ eth-account==0.14.0
 x402[requests,evm] @ git+https://github.com/x402-foundation/x402@e398a9e#subdirectory=python/x402
 langchain-anthropic==1.7.2
 scikit-learn==1.9.1
+numpy==2.5.3
+scipy==1.18.1
+joblib==1.6.0
