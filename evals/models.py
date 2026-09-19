@@ -126,6 +126,16 @@ class AgentResult(_Model):
     trace: list[str] = Field(default_factory=list)
 
 
+class VendorOutcome(_Model):
+    """A vendor's observed settlement outcomes within one eval run --
+    ExecutedPurchase.verified is the one signal every executor already
+    produces (evals/executor.py). Folded into a Beta-Binomial posterior by
+    evals.ml.reliability, which reads this back out of serialized
+    EvalReport JSON files."""
+    successes: int = 0
+    failures: int = 0
+
+
 class EvalReport(_Model):
     task_id: str
     agent_id: str
@@ -149,3 +159,4 @@ class EvalReport(_Model):
     escalation_reasons: dict[str, int]
     unverified_claims: int = 0
     settled_tx_hashes: list[str] = Field(default_factory=list)
+    vendor_outcomes: dict[str, VendorOutcome] = Field(default_factory=dict)

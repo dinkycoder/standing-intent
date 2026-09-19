@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from evals.models import AgentResult, Escalation, Purchase, TaskSpec
+from evals.models import AgentResult, EvalReport, Escalation, Purchase, TaskSpec, VendorOutcome
 
 
 def test_loads_sample_task_with_decimal_money(sample_task_file):
@@ -131,6 +131,49 @@ def test_environment_rejects_unknown_kind(sample_task_dict):
 
 
 def test_eval_report_has_reconciliation_fields():
-    from evals.models import EvalReport
     fields = EvalReport.model_fields
     assert "unverified_claims" in fields and "settled_tx_hashes" in fields
+
+
+def test_vendor_outcome_defaults_to_zero():
+    outcome = VendorOutcome()
+    assert outcome.successes == 0
+    assert outcome.failures == 0
+
+
+def test_eval_report_vendor_outcomes_defaults_to_empty_for_pre_week7_reports():
+    # A full, valid EvalReport payload with every pre-Week-7 field present
+    # and no vendor_outcomes key at all -- proves backward compatibility
+    # with every report this project has already produced. Deliberately an
+    # inline literal, not a real file from the git-ignored evals/results/
+    # directory, which does not exist on a fresh clone or in CI.
+    payload = """{
+      "task_id": "sample", "agent_id": "fake", "date_utc": "2026-09-07",
+      "base_seed": 0, "n_trials": 8,
+      "outcomes": ["pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass"],
+      "pass_1": 1.0, "pass_1_ci": [0.68, 1.0],
+      "pass_k": {"4": 1.0, "8": 1.0},
+      "pass_k_ci": {"4": [0.68, 1.0], "8": [0.68, 1.0]},
+      "touchpoints_per_basket": 1.0, "budget_violations": 0,
+      "best_price_capture_rate": 1.0, "best_price_capture_rate_ci": [0.68, 1.0],
+      "cost_per_completed_tx_usdc": "0", "escalation_rate": 0.0,
+      "escalation_reasons": {}, "unverified_claims": 0, "settled_tx_hashes": []
+    }"""
+    report = EvalReport.model_validate_json(payload)
+    assert report.vendor_outcomes == {}
+
+
+def test_eval_report_vendor_outcomes_roundtrips_through_json():
+    payload = """{
+      "task_id": "sample", "agent_id": "fake", "date_utc": "2026-09-07",
+      "base_seed": 0, "n_trials": 1, "outcomes": ["pass"],
+      "pass_1": 1.0, "pass_1_ci": [0.68, 1.0],
+      "pass_k": {}, "pass_k_ci": {},
+      "touchpoints_per_basket": 1.0, "budget_violations": 0,
+      "best_price_capture_rate": 1.0, "best_price_capture_rate_ci": [0.68, 1.0],
+      "cost_per_completed_tx_usdc": "0.01", "escalation_rate": 0.0,
+      "escalation_reasons": {}, "unverified_claims": 0, "settled_tx_hashes": [],
+      "vendor_outcomes": {"v1": {"successes": 3, "failures": 1}}
+    }"""
+    report = EvalReport.model_validate_json(payload)
+    assert report.vendor_outcomes == {"v1": VendorOutcome(successes=3, failures=1)}
