@@ -17,7 +17,7 @@ from evals.environments import resolve_executor
 from evals.executor import ExecutedPurchase
 from evals.grading import GradeOutcome, grade
 from evals.guardrail import check_not_duplicate
-from evals.models import AgentResult, EvalReport, TaskSpec, Vendor
+from evals.models import AgentResult, EvalReport, TaskSpec, Vendor, VendorOutcome
 from evals.stats import pass_k_interval, wilson_interval
 
 _PASS_K_VALUES = (4, 8)
@@ -132,6 +132,15 @@ def run_eval(
     unverified_claims = outcomes.count(GradeOutcome.UNVERIFIED_CLAIM)
     settled = [e.tx_hash for ex in executed_per_trial for e in ex if e.tx_hash]
 
+    vendor_outcomes: dict[str, VendorOutcome] = {}
+    for ex in executed_per_trial:
+        for e in ex:
+            outcome = vendor_outcomes.setdefault(e.vendor_id, VendorOutcome())
+            if e.verified:
+                outcome.successes += 1
+            else:
+                outcome.failures += 1
+
     target = cheapest_in_policy_vendor(task)
     # Best-price capture is only a meaningful question when the task's own
     # grading contract says a real purchase should happen at all. A task can
@@ -203,4 +212,5 @@ def run_eval(
         escalation_reasons=dict(reasons),
         unverified_claims=unverified_claims,
         settled_tx_hashes=settled,
+        vendor_outcomes=vendor_outcomes,
     )

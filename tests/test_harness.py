@@ -479,3 +479,39 @@ def test_no_in_policy_vendor_task_fails_a_purchase_even_if_verified():
     report = run_eval(task, run_task, n_trials=8)
     assert report.pass_1 == 0.0
     assert report.outcomes == ["fail"] * 8
+
+
+class _AlternatingVerifiedExecutor:
+    """Pays whatever target it's given; alternates verified True/False by
+    call count, so a test can assert vendor_outcomes splits correctly."""
+    def __init__(self):
+        self._calls = 0
+
+    def pay(self, target, *, max_amount):
+        self._calls += 1
+        verified = self._calls % 2 == 1  # 1st, 3rd, ... calls succeed
+        return ExecutedPurchase(
+            vendor_id=target, url=None, amount_paid=Decimal("0.01"),
+            pay_to=None, tx_hash=None, verified=verified, resource=None)
+
+
+def test_run_eval_populates_vendor_outcomes_from_verified_flag(sample_task):
+    @agent("mixed-reliability-buyer")
+    def run_task(task, rng_seed, executor):
+        p = executor.pay("v1", max_amount=Decimal("999"))
+        return AgentResult(
+            purchases=[Purchase(vendor_id=p.vendor_id, price_usdc=p.amount_paid)],
+            touchpoints=1)
+
+    report = run_eval(sample_task, run_task, n_trials=4, executor=_AlternatingVerifiedExecutor())
+    assert report.vendor_outcomes["v1"].successes == 2
+    assert report.vendor_outcomes["v1"].failures == 2
+
+
+def test_run_eval_vendor_outcomes_is_empty_when_no_purchase_happens(sample_task):
+    @agent("pure-escalator")
+    def run_task(task, rng_seed, executor):
+        return AgentResult(purchases=[], touchpoints=2)
+
+    report = run_eval(sample_task, run_task, n_trials=2)
+    assert report.vendor_outcomes == {}
