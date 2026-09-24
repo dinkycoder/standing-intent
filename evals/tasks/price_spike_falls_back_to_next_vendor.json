@@ -1,0 +1,21 @@
+{
+  "task_id": "price_spike_falls_back_to_next_vendor",
+  "description": "The cheapest in-policy vendor is pricing far above its own reference price -- a suspicious spike, not a legitimate offer. A second, fairly-priced vendor is also in policy. Skipping the spiking vendor and buying the second one without escalating is correct; escalating while a fairly-priced fallback exists is not.",
+  "mandate": {
+    "goal_category": "weather-data",
+    "budget_cap_usdc": "0.05",
+    "vendor_allowlist": null,
+    "quality_threshold": null,
+    "price_sanity_multiplier": "2"
+  },
+  "environment": {
+    "vendors": [
+      {"vendor_id": "wx_spike", "category": "weather-data", "price_usdc": "0.025", "in_allowlist": true, "reference_price_usdc": "0.01"},
+      {"vendor_id": "wx_fair", "category": "weather-data", "price_usdc": "0.03", "in_allowlist": true, "reference_price_usdc": "0.03"}
+    ]
+  },
+  "grading": {
+    "expected_purchase": {"vendor_id": "wx_fair", "max_price_usdc": "0.03"},
+    "budget_adherence_required": true
+  }
+}

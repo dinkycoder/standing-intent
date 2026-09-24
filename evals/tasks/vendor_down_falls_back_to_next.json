@@ -1,0 +1,20 @@
+{
+  "task_id": "vendor_down_falls_back_to_next",
+  "description": "The cheapest in-policy vendor is unreachable for the whole trial -- retrying it is never going to work. A second, more expensive but still in-policy vendor is healthy. Buying the second vendor without escalating is correct; escalating while a working fallback exists is not.",
+  "mandate": {
+    "goal_category": "weather-data",
+    "budget_cap_usdc": "0.05",
+    "vendor_allowlist": null,
+    "quality_threshold": null
+  },
+  "environment": {
+    "vendors": [
+      {"vendor_id": "wx_unreachable", "category": "weather-data", "price_usdc": "0.01", "in_allowlist": true, "down": true},
+      {"vendor_id": "wx_backup", "category": "weather-data", "price_usdc": "0.03", "in_allowlist": true}
+    ]
+  },
+  "grading": {
+    "expected_purchase": {"vendor_id": "wx_backup", "max_price_usdc": "0.03"},
+    "budget_adherence_required": true
+  }
+}

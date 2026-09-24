@@ -9,7 +9,7 @@ from typing import Protocol, runtime_checkable
 
 from evals.models import TaskSpec
 from payments.client import pay
-from payments.errors import OfferOverCap
+from payments.errors import EndpointUnreachable, OfferOverCap, SettlementRejected
 
 
 @dataclass(frozen=True)
@@ -31,11 +31,27 @@ class PaymentExecutor(Protocol):
 class SyntheticExecutor:
     def __init__(self, task: TaskSpec):
         self._by_id = {v.vendor_id: v for v in task.environment.vendors}
+        # Attempt counts for Week 8 fault injection (Vendor.fails_next_n_attempts).
+        # Lives on this instance, not module state, so it is scoped to exactly
+        # one trial: evals.harness.run_eval constructs a fresh SyntheticExecutor
+        # per trial on the default (executor=None) path.
+        self._attempts: dict[str, int] = {}
 
     def pay(self, target: str, *, max_amount: Decimal) -> ExecutedPurchase:
         vendor = self._by_id[target]              # KeyError on unknown id -- a harness bug
         if vendor.price_usdc > max_amount:
             raise OfferOverCap(vendor.price_usdc, max_amount)
+        # Fault injection happens after the pre-flight cap check (a client
+        # would not even attempt a payment it already knows is over cap) but
+        # before the simulated settlement succeeds.
+        if vendor.down:
+            raise EndpointUnreachable(f"{vendor.vendor_id} is unreachable")
+        self._attempts[target] = self._attempts.get(target, 0) + 1
+        if self._attempts[target] <= vendor.fails_next_n_attempts:
+            raise SettlementRejected(
+                f"{vendor.vendor_id} rejected settlement "
+                f"(attempt {self._attempts[target]} of {vendor.fails_next_n_attempts})"
+            )
         return ExecutedPurchase(
             vendor_id=vendor.vendor_id, url=None, amount_paid=vendor.price_usdc,
             pay_to=None, tx_hash=None, verified=True, resource=None)

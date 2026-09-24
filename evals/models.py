@@ -55,6 +55,19 @@ class Vendor(_Model):
     # price-sanity check. None means no baseline is declared for this
     # vendor; the check is a no-op.
     reference_price_usdc: Optional[UsdcAmount] = None
+    # Week 8 fault injection, consumed by evals.executor.SyntheticExecutor.
+    # The number of consecutive pay() attempts against this vendor that raise
+    # payments.errors.SettlementRejected before an attempt succeeds. 0
+    # (default): never fails this way. Counts per trial, not cumulatively
+    # across an eval run -- evals.harness.run_eval builds a fresh
+    # SyntheticExecutor per trial for exactly this reason.
+    fails_next_n_attempts: int = Field(default=0, ge=0)
+    # Week 8 fault injection: every pay() attempt against this vendor raises
+    # payments.errors.EndpointUnreachable, for the life of the trial. A
+    # separate flag rather than a very large fails_next_n_attempts so a task
+    # file's intent ("this vendor never comes back") reads off the field
+    # name instead of a magic number.
+    down: bool = False
 
 
 class Mandate(_Model):

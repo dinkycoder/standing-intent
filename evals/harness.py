@@ -100,12 +100,19 @@ def run_eval(
         raise ValueError(f"n_trials must be >= 1, got {n_trials}")
 
     agent_id = require_agent_id(agent_fn)
-    base_executor = executor if executor is not None else resolve_executor(task, wallet=None)
 
     results: list[AgentResult] = []
     outcomes: list[GradeOutcome] = []
     executed_per_trial: list[list[ExecutedPurchase]] = []
     for i in range(n_trials):
+        # A caller-supplied executor is reused across every trial on purpose
+        # (tests/test_harness.py's _AlternatingVerifiedExecutor relies on this
+        # to test cross-trial aggregation). The default executor is instead
+        # rebuilt fresh each trial, so per-vendor fault-injection state
+        # (evals.executor.SyntheticExecutor's Week 8 attempt counters) starts
+        # clean every trial instead of leaking a vendor's "already failed
+        # twice" state from trial 1 into trial 2.
+        base_executor = executor if executor is not None else resolve_executor(task, wallet=None)
         view, calls = _recording_view(base_executor)
         result = agent_fn(task, base_seed + i, view)
         if not isinstance(result, AgentResult):

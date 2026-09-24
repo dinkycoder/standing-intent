@@ -1,0 +1,19 @@
+{
+  "task_id": "settlement_failure_recovers_on_retry",
+  "description": "The only in-policy vendor's settlement is rejected twice -- a transient failure, not a policy problem. Retrying the same vendor succeeds on the third attempt. No escalation is correct; giving up after the first failure is not.",
+  "mandate": {
+    "goal_category": "weather-data",
+    "budget_cap_usdc": "0.05",
+    "vendor_allowlist": null,
+    "quality_threshold": null
+  },
+  "environment": {
+    "vendors": [
+      {"vendor_id": "wx_flaky", "category": "weather-data", "price_usdc": "0.01", "in_allowlist": true, "fails_next_n_attempts": 2}
+    ]
+  },
+  "grading": {
+    "expected_purchase": {"vendor_id": "wx_flaky", "max_price_usdc": "0.01"},
+    "budget_adherence_required": true
+  }
+}

@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from evals import guardrail
-from evals.harness import cheapest_in_policy_vendor, in_policy_candidates
-from evals.models import TaskSpec
+from evals.harness import in_policy_candidates
+from evals.models import TaskSpec, Vendor
 
 TASK_DIR = Path("evals/tasks")
 TASK_FILES = sorted(TASK_DIR.glob("*.json"))
@@ -20,27 +20,50 @@ def test_task_spec_loads(path):
     assert task.task_id == path.stem
 
 
+def _is_unpurchasable(task: TaskSpec, vendor: Vendor) -> bool:
+    """A candidate that can never be the terminal state of a correct
+    purchase: permanently down (Week 8 fault injection), or price-anomalous.
+
+    Deliberately excludes fails_next_n_attempts > 0 -- a transient fault
+    eventually succeeds, so that vendor stays a legitimate purchase target
+    for this static self-consistency check (which has no notion of retries).
+    """
+    if vendor.down:
+        return True
+    try:
+        guardrail.check_purchase(task, vendor.vendor_id)
+    except guardrail.PriceAnomaly:
+        return True
+    return False
+
+
+def _cheapest_purchasable(task: TaskSpec) -> Vendor | None:
+    purchasable = [c for c in in_policy_candidates(task) if not _is_unpurchasable(task, c)]
+    if not purchasable:
+        return None
+    return min(purchasable, key=lambda v: v.price_usdc)
+
+
 @pytest.mark.parametrize("path", TASK_FILES, ids=[p.stem for p in TASK_FILES])
 def test_task_spec_is_self_consistent(path):
     task = TaskSpec.from_json_file(path)
-    target = cheapest_in_policy_vendor(task)
+    target = _cheapest_purchasable(task)
     if task.grading.expected_purchase is None:
-        if target is None:
-            # No in-policy vendor exists at all (no_in_policy_vendor_escalates).
-            return
-        # An in-policy vendor DOES exist, so a null expected_purchase must be
-        # explained by a different reason a purchase is invalid -- today,
-        # only a price anomaly on the sole target (price_anomaly_escalates).
-        # Every in-policy candidate must be anomalous, not just the cheapest --
-        # a non-anomalous alternative would let a correct agent buy it instead,
-        # making a null expected_purchase genuinely wrong, not just unproven.
-        for candidate in in_policy_candidates(task):
-            with pytest.raises(guardrail.PriceAnomaly):
-                guardrail.check_purchase(task, candidate.vendor_id)
+        # A null expected_purchase asserts no purchasable in-policy vendor
+        # exists -- whether because none are in policy at all
+        # (no_in_policy_vendor_escalates), every candidate is price-anomalous
+        # (price_anomaly_escalates), every candidate is permanently down
+        # (vendor_down_no_fallback_escalates), or some mix. A purchasable
+        # target existing anyway would mean a correct agent should have
+        # bought it, making the null expected_purchase wrong.
+        assert target is None, (
+            f"{path.stem}: {target.vendor_id if target else None} is "
+            "purchasable in-policy, but grading expects no purchase at all"
+        )
         return
-    assert target is not None, f"{path.stem}: no in-policy vendor satisfies the mandate"
+    assert target is not None, f"{path.stem}: no purchasable in-policy vendor satisfies the mandate"
     assert target.vendor_id == task.grading.expected_purchase.vendor_id, (
-        f"{path.stem}: cheapest in-policy vendor is {target.vendor_id}, "
+        f"{path.stem}: cheapest purchasable in-policy vendor is {target.vendor_id}, "
         f"but grading expects {task.grading.expected_purchase.vendor_id}"
     )
 
@@ -50,7 +73,7 @@ def test_expected_price_within_max(path):
     task = TaskSpec.from_json_file(path)
     if task.grading.expected_purchase is None:
         return
-    target = cheapest_in_policy_vendor(task)
+    target = _cheapest_purchasable(task)
     assert target.price_usdc <= task.grading.expected_purchase.max_price_usdc
 
 
